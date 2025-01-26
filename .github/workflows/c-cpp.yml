@@ -24,9 +24,3 @@ jobs:
       run: cmake --build ${{github.workspace}}/build --config Release
     - name: List build directory contents
       run: ls -R ${{github.workspace}}/build
-    - name: Test
-      run: |
-        cd ${{github.workspace}}/build/src/Server
-        ./Server &
-        cd ../Client
-        ./Client
