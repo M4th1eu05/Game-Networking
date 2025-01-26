@@ -14,7 +14,7 @@ Socket::Socket() {
 }
 
 Socket::~Socket() {
-    close(sockfd);
+    ::close(sockfd);
 }
 
 bool Socket::create() {
