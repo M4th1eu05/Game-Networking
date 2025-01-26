@@ -22,8 +22,11 @@ jobs:
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config Release
+    - name: List build directory contents
+      run: ls -R ${{github.workspace}}/build
     - name: Test
       run: |
-        cd ${{github.workspace}}/build
-        ./src/Server/server &
-        ./src/Client/client
+        cd ${{github.workspace}}/build/src/Server
+        ./server &
+        cd ../Client
+        ./client
