@@ -10,11 +10,3 @@ add_subdirectory(src/Server)
 
 # Create the client executable
 add_subdirectory(src/Client)
-
-# Platform-specific linking
-
-if(WIN32)
-    target_link_libraries(Socket ws2_32)
-elseif(UNIX)
-    target_link_libraries(Socket pthread)
-endif()
