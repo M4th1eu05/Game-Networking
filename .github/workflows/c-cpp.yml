@@ -27,6 +27,8 @@ jobs:
     - name: Test
       run: |
         cd ${{github.workspace}}/build/src/Server
-        ./server &
+        ls -l
+        ./Server &
         cd ../Client
-        ./client
+        ls -l
+        ./Client
