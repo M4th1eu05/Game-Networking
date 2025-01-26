@@ -1,8 +1,6 @@
 # Create the static library
 add_library(Socket STATIC
         Socket.h
-        Socket_windows.cpp
-        Socket_posix.cpp
         Socket_common.cpp
 )
 
