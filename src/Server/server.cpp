@@ -3,7 +3,7 @@
 
 int main() {
     Socket server;
-    if (!server.bind("0.0.0.0", 5555)) {
+    if (!server.bind("127.0.0.1", 5555)) {
         std::cerr << "Failed to bind server socket.\n";
         return 1;
     }

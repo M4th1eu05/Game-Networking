@@ -8,7 +8,6 @@ public:
     Socket();
     ~Socket();
 
-    bool create();
     bool bind(const std::string& ip, int port);
     bool sendTo(const std::string& ip, int port, const std::string& message);
     std::string receiveFrom(std::string& senderIp, int& senderPort);

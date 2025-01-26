@@ -23,10 +23,6 @@ Socket::~Socket() {
     WSACleanup();
 }
 
-bool Socket::create() {
-    return true; // Socket is created in the constructor for Windows
-}
-
 bool Socket::bind(const std::string& ip, int port) {
     sockaddr_in addr;
     addr.sin_family = AF_INET;
