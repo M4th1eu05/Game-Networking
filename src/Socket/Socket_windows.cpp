@@ -1,4 +1,6 @@
 #include "Socket.h"
+
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <string>
@@ -63,3 +65,4 @@ std::string Socket::receiveFrom(std::string& senderIp, int& senderPort) {
 void Socket::close() {
     closesocket(sockfd);
 }
+#endif

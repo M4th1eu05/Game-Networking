@@ -1,4 +1,6 @@
 #include "Socket.h"
+
+#ifdef __unix__
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -58,3 +60,4 @@ std::string Socket::receiveFrom(std::string& senderIp, int& senderPort) {
 void Socket::close() {
     close(sockfd);
 }
+#endif
