@@ -37,7 +37,7 @@ bool Socket::sendTo(const std::string& ip, int port, const std::string& message)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = inet_addr(ip.c_str());
-    if (sendto(sockfd, message.c_str(), message.size(), 0, (sockaddr*)&addr, sizeof(addr)) < 0) {
+    if (::sendto(sockfd, message.c_str(), message.size(), 0, (sockaddr*)&addr, sizeof(addr)) < 0) {
         return false;
     }
     return true;
@@ -57,5 +57,5 @@ std::string Socket::receiveFrom(std::string& senderIp, int& senderPort) {
 }
 
 void Socket::close() {
-    close(sockfd);
+    ::close(sockfd);
 }
