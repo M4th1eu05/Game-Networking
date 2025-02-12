@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 #include <span>
+#include <unordered_map>
+#include "Stream.h"
 
 void hello();
 
@@ -47,6 +49,8 @@ private:
     int socketFd; // Identifiant du socket
     uint64_t nextClientID = 1; // ID unique attribué aux clients
     std::unordered_map<uint64_t, std::string> clients; // Liste des clients connectés
+    uint32_t nextStreamID = 1; // ID unique des Streams
+    std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
 
     SocketType m_socket;
 };
