@@ -91,6 +91,7 @@ Falcon::~Falcon() {
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port)
 {
+
     sockaddr local_endpoint = StringToIp(endpoint, port);
     auto falcon = std::make_unique<Falcon>();
     falcon->m_socket = socket(local_endpoint.sa_family,
@@ -101,6 +102,8 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
         closesocket(falcon->m_socket);
         return nullptr;
     }
+
+
 
     return falcon;
 }
