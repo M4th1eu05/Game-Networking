@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/Game-Networking.iml" filepath="$PROJECT_DIR$/.idea/Game-Networking.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/falcon.iml" filepath="$PROJECT_DIR$/.idea/falcon.iml" />
     </modules>
   </component>
