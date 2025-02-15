@@ -61,7 +61,7 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
     });
 }
 
-
+/*
 void Stream::SendData(uint32_t streamID, std::span<const char> data) {
     if (streams.find(streamID) != streams.end()) {
         streams[streamID]->SendData(data);
@@ -77,3 +77,4 @@ void Stream::OnDataReceived(uint32_t streamID, std::function<void(std::span<cons
         std::cerr << "Error: Stream " << streamID << " does not exist!\n";
     }
 }
+*/

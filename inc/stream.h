@@ -12,8 +12,8 @@ public:
     Stream(uint32_t id, bool reliable);
     ~Stream();
 
-    void SendData(uint32_t streamID, std::span<const char> data);
-    void OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler);
+    void SendData(std::span<const char> data);
+    void OnDataReceived(std::function<void(std::span<const char>)> handler);
     void Acknowledge(uint32_t packetID);
 
     uint32_t GetStreamID() const { return streamID; }
