@@ -105,6 +105,8 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
         return nullptr;
     }
 
+    std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
+
     return falcon;
 }
 
@@ -137,8 +139,9 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     if (sent < 0) {
         throw std::runtime_error("Failed to send connection request");
     }
-
-    std::cout << "Client connected to " << serverIp << ":" << port << "\n";
+    else {
+        std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
+    }
 }
 
 
@@ -189,6 +192,7 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
 
 void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO: replace nextclient and stuff with UUID + Check if received message is a connection message
     std::thread([this, handler]() {
+        std::cout << "Listening for connections on server" << "\n";
         while (true) {
             char buffer[1024];
             sockaddr_in clientAddr{};
@@ -208,9 +212,15 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO:
                     }
                 }
 
+                std::cout << "Message received from client attempting to connect" << "\n";
+
                 if (!clientExists) {
+
                     uint64_t clientID = nextClientID++;
                     clients[clientID] = clientIP;
+
+                    std::cout << "Client did not exist, adding it to our list. ID : " << clientID << "\n";
+
                     handler(clientID);
 
                     // Send the clientID as a confirmation

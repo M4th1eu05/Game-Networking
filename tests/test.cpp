@@ -6,15 +6,19 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "falcon.h"
+#include "spdlog/spdlog.h"
 
-TEST_CASE( "Can Listen", "[falcon]" ) {
+TEST_CASE("Can Listen", "[falcon]") {
     auto receiver = Falcon::Listen("127.0.0.1", 5555);
     REQUIRE(receiver != nullptr);
 }
 
 TEST_CASE("Client can connect to server", "[Socket]") {
     Falcon server;
-    server.Listen( 5555);
+    server.Listen(5555);
+    server.OnClientConnected([&](uint64_t clientID) {
+        spdlog::debug("Client connected with ID {}", clientID);
+    });
 
     Falcon client;
     REQUIRE_NOTHROW(client.ConnectTo("127.0.0.1", 5555));
@@ -23,12 +27,15 @@ TEST_CASE("Client can connect to server", "[Socket]") {
     uint64_t clientID = 0;
 
     client.OnConnectionEvent([&](bool success, uint64_t id) {
+        spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
         connectionSuccess = success;
         clientID = id;
     });
 
-    // Attendre que l'événement se déclenche
+    // Wait for the event to trigger
     std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    spdlog::debug("Connection success: {}, Client ID: {}", connectionSuccess, clientID);
 
     REQUIRE(connectionSuccess == true);
     REQUIRE(clientID > 0);
