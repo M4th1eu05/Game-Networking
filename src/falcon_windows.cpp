@@ -12,6 +12,8 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
+#include <thread>
+
 #include "falcon.h"
 
 struct WinSockInitializer
@@ -91,7 +93,6 @@ Falcon::~Falcon() {
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port)
 {
-
     sockaddr local_endpoint = StringToIp(endpoint, port);
     auto falcon = std::make_unique<Falcon>();
     falcon->m_socket = socket(local_endpoint.sa_family,
@@ -103,25 +104,26 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
         return nullptr;
     }
 
-
-
     return falcon;
 }
 
-std::unique_ptr<Falcon> Falcon::Connect(const std::string& serverIp, uint16_t port)
+void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 {
-    sockaddr local_endpoint = StringToIp(serverIp, port);
-    auto falcon = std::make_unique<Falcon>();
-    falcon->m_socket = socket(local_endpoint.sa_family,
-        SOCK_DGRAM,
-        IPPROTO_UDP);
-    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0)
-    {
-        closesocket(falcon->m_socket);
-        return nullptr;
-    }
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
-    return falcon;
+    ConnectionInfo connInfo;
+    connInfo.messageType = 1; // Example message type
+    std::strncpy(connInfo.message, "CONNECT", sizeof(connInfo.message) - 1);
+    connInfo.message[sizeof(connInfo.message) - 1] = '\0'; // Ensure null-termination
+
+    std::vector<char> buffer(sizeof(connInfo));
+    std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
+
+    sendto(socketFd, buffer.data(), buffer.size(), 0,
+           (struct sockaddr*)&serverAddr, sizeof(serverAddr));
 }
 
 int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const char> message)
@@ -150,4 +152,35 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
     return read_bytes;
+}
+
+void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO: replace nextclient and stuff with UUID + Check if received message is a connection message
+    std::thread([this, handler]() {
+        while (true) {
+            char buffer[1024];
+            sockaddr_in clientAddr{};
+            int clientAddrLen = sizeof(clientAddr);
+
+            int received = recvfrom(socketFd, buffer, sizeof(buffer) - 1, 0,
+                                    (struct sockaddr*)&clientAddr, &clientAddrLen);
+            if (received > 0) {
+                buffer[received] = '\0';
+
+                std::string clientIP = inet_ntoa(clientAddr.sin_addr);
+                bool clientExists = false;
+                for (const auto& [id, ip] : clients) {
+                    if (ip == clientIP) {
+                        clientExists = true;
+                        break;
+                    }
+                }
+
+                if (!clientExists) {
+                    uint64_t clientID = nextClientID++;
+                    clients[clientID] = clientIP;
+                    handler(clientID);
+                }
+            }
+        }
+    }).detach();
 }

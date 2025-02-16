@@ -37,22 +37,6 @@ int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
     return ReceiveFromInternal(from, message);
 }
 
-void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
-    std::thread t([this, handler] {
-        while (true) {
-            std::string from_ip;
-            from_ip.resize(255);
-            std::array<char, 65535> buffer;
-            int read_bytes = ReceiveFrom(from_ip, buffer);
-            if (read_bytes > 0) {
-                handler(nextClientID);
-                clients[nextClientID] = from_ip;
-                nextClientID++;
-            }
-        }
-    });
-}
-
 void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
      std::thread t([this, handler] {
         while (true) {

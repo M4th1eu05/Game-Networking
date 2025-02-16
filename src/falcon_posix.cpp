@@ -6,6 +6,8 @@
 #include <memory>
 #include <fmt/core.h>
 #include "falcon.h"
+#include <thread>
+
 
 std::string IpToString(const sockaddr* sa)
 {
@@ -86,20 +88,15 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
     return falcon;
 }
 
-std::unique_ptr<Falcon> Falcon::Connect(const std::string& serverIp, uint16_t port)
-{
-    sockaddr local_endpoint = StringToIp(serverIp, port);
-    auto falcon = std::make_unique<Falcon>();
-    falcon->m_socket = socket(local_endpoint.sa_family,
-        SOCK_DGRAM,
-        IPPROTO_UDP);
-    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0)
-    {
-        close(falcon->m_socket);
-        return nullptr;
-    }
+void Falcon::ConnectTo(const std::string& ip, uint16_t port) {
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr);
 
-    return falcon;
+    std::string initMessage = "CONNECT";
+    sendto(socketFd, initMessage.c_str(), initMessage.size(), 0,
+           (struct sockaddr*)&serverAddr, sizeof(serverAddr));
 }
 
 int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const char> message)
@@ -128,4 +125,33 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
     return read_bytes;
+}
+
+void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
+    std::thread([this, handler]() {
+        while (true) {
+            char buffer[1024];
+            sockaddr_in clientAddr{};
+            socklen_t clientAddrLen = sizeof(clientAddr);
+
+            int received = recvfrom(socketFd, buffer, sizeof(buffer) - 1, 0,
+                                    (struct sockaddr*)&clientAddr, &clientAddrLen);
+            if (received > 0) {
+                buffer[received] = '\0';
+
+                char clientIP[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+
+                if (clients.find(nextClientID) == clients.end()) {
+                    uint64_t clientID = nextClientID++;
+                    clients[clientID] = clientIP;
+                    handler(clientID);
+
+                    // Envoyer l'ID client en réponse
+                    sendto(socketFd, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
+                           (struct sockaddr*)&clientAddr, clientAddrLen);
+                }
+            }
+        }
+    }).detach();
 }
