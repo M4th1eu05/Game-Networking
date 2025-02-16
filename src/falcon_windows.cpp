@@ -92,29 +92,32 @@ Falcon::~Falcon() {
     }
 }
 
-std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port)
-{
+std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port) {
     sockaddr local_endpoint = StringToIp(endpoint, port);
+    std::cout << "StringToIp() returned family: " << local_endpoint.sa_family << std::endl;
+
     auto falcon = std::make_unique<Falcon>();
-    falcon->m_socket = socket(local_endpoint.sa_family,
-        SOCK_DGRAM,
-        IPPROTO_UDP);
-    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0)
-    {
+    falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
+    if (falcon->m_socket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed with error: " << WSAGetLastError() << std::endl;
+        return nullptr;
+    }
+
+    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0) {
+        std::cerr << "Socket bind failed with error: " << WSAGetLastError() << std::endl;
         closesocket(falcon->m_socket);
         return nullptr;
     }
 
     std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
-
     return falcon;
 }
 
 void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 {
     // Create the socket
-    socketFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socketFd < 0) {
+    m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (m_socket < 0) {
         throw std::runtime_error("Socket creation failed");
     }
 
@@ -134,7 +137,7 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
 
     // Send the connection request to the server
-    int sent = sendto(socketFd, buffer.data(), buffer.size(), 0,
+    int sent = sendto(m_socket, buffer.data(), buffer.size(), 0,
                       (struct sockaddr*)&serverAddr, sizeof(serverAddr));
     if (sent < 0) {
         throw std::runtime_error("Failed to send connection request");
@@ -198,7 +201,7 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO:
             sockaddr_in clientAddr{};
             int clientAddrLen = sizeof(clientAddr);
 
-            int received = recvfrom(socketFd, buffer, sizeof(buffer) - 1, 0,
+            int received = recvfrom(m_socket, buffer, sizeof(buffer) - 1, 0,
                                     (struct sockaddr*)&clientAddr, &clientAddrLen);
             if (received > 0) {
                 buffer[received] = '\0';
@@ -224,11 +227,14 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO:
                     handler(clientID);
 
                     // Send the clientID as a confirmation
-                    int sent = sendto(socketFd, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
+                    int sent = sendto(m_socket, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
                                       (struct sockaddr*)&clientAddr, clientAddrLen);
                     if (sent == SOCKET_ERROR)
                         std::cerr << "Failed to send confirmation to client.\n";
                 }
+            }
+            else {
+                //std::cerr << "Failed to receive message from client. Error: " << WSAGetLastError() << "\n";
             }
         }
     }).detach();
@@ -240,7 +246,7 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) { //
         sockaddr_in serverAddr{};
         socklen_t serverAddrLen = sizeof(serverAddr);
 
-        int received = recvfrom(socketFd, reinterpret_cast<char*>(&clientID), sizeof(clientID), 0,
+        int received = recvfrom(m_socket, reinterpret_cast<char*>(&clientID), sizeof(clientID), 0,
                                 (struct sockaddr*)&serverAddr, &serverAddrLen);
         if (received == sizeof(clientID)) {
             handler(true, clientID);
@@ -260,7 +266,7 @@ void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) { // TO
                 socklen_t clientAddrLen = sizeof(clientAddr);
 
                 std::string pingMessage = "PING";
-                int sent = sendto(socketFd, pingMessage.c_str(), pingMessage.size(), 0,
+                int sent = sendto(m_socket, pingMessage.c_str(), pingMessage.size(), 0,
                                   (struct sockaddr*)&clientAddr, clientAddrLen);
 
                 char buffer[1024];
