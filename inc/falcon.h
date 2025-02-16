@@ -45,6 +45,9 @@ public:
     std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
     std::unique_ptr<Stream> CreateStream(bool reliable);
     void CloseStream(const Stream& stream);
+    void SendData(uint32_t streamID, std::span<const char> data);
+    void OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler);
+
 
 private:
     int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);

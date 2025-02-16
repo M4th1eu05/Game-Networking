@@ -37,16 +37,8 @@ int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
     return ReceiveFromInternal(from, message);
 }
 
-void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
-     std::thread t([this, handler] {
-        while (true) {
 
-        }
-    });
-}
-
-/*
-void Stream::SendData(uint32_t streamID, std::span<const char> data) {
+void Falcon::SendData(uint32_t streamID, std::span<const char> data) {
     if (streams.find(streamID) != streams.end()) {
         streams[streamID]->SendData(data);
     } else {
@@ -54,11 +46,10 @@ void Stream::SendData(uint32_t streamID, std::span<const char> data) {
     }
 }
 
-void Stream::OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler) {
+void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler) {
     if (streams.find(streamID) != streams.end()) {
         streams[streamID]->OnDataReceived(handler);
     } else {
         std::cerr << "Error: Stream " << streamID << " does not exist!\n";
     }
 }
-*/
