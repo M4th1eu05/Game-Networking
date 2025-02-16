@@ -31,6 +31,7 @@ public:
     Falcon& operator=(Falcon&&) = default;
 
     static std::unique_ptr<Falcon> Listen(const std::string& endpoint, uint16_t port);
+    static std::unique_ptr<Falcon> Listen(uint16_t port);
     void ConnectTo(const std::string& serverIp, uint16_t port);
 
     int SendTo(const std::string& to, uint16_t port, std::span<const char> message);

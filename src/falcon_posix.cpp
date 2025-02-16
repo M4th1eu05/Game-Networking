@@ -89,15 +89,37 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
     return falcon;
 }
 
-void Falcon::ConnectTo(const std::string& ip, uint16_t port) {
+void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
+{
+    // Create the socket
+    socketFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketFd < 0) {
+        throw std::runtime_error("Socket creation failed");
+    }
+
+    // Configure the server address
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
-    inet_pton(AF_INET, ip.c_str(), &serverAddr.sin_addr);
+    inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
-    std::string initMessage = "CONNECT";
-    sendto(socketFd, initMessage.c_str(), initMessage.size(), 0,
-           (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+    // Prepare the connection message
+    ConnectionInfo connInfo;
+    connInfo.messageType = 1; // Example message type
+    std::strncpy(connInfo.message, "CONNECT", sizeof(connInfo.message) - 1);
+    connInfo.message[sizeof(connInfo.message) - 1] = '\0'; // Ensure null-termination
+
+    std::vector<char> buffer(sizeof(connInfo));
+    std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
+
+    // Send the connection request to the server
+    int sent = sendto(socketFd, buffer.data(), buffer.size(), 0,
+                      (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+    if (sent < 0) {
+        throw std::runtime_error("Failed to send connection request");
+    }
+
+    std::cout << "Client connected to " << serverIp << ":" << port << "\n";
 }
 
 int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const char> message)

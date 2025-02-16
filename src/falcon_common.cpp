@@ -53,3 +53,8 @@ void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<cons
         std::cerr << "Error: Stream " << streamID << " does not exist!\n";
     }
 }
+
+std::unique_ptr<Falcon> Falcon::Listen(const uint16_t port)
+{
+    return Listen("127.0.0.1", port);
+}
