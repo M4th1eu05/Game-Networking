@@ -115,16 +115,33 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
 {
     struct sockaddr_storage peer_addr;
     socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
-    const int read_bytes = recvfrom(m_socket,
-        message.data(),
-        message.size_bytes(),
-        0,
-        reinterpret_cast<sockaddr*>(&peer_addr),
-        &peer_addr_len);
 
-    from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(m_socket, &read_fds);
 
-    return read_bytes;
+    struct timeval timeout;
+    timeout.tv_sec = 1; // 1 second
+    timeout.tv_usec = 0;
+
+    int select_result = select(m_socket + 1, &read_fds, nullptr, nullptr, &timeout);
+    if (select_result > 0 && FD_ISSET(m_socket, &read_fds)) {
+        const int read_bytes = recvfrom(m_socket,
+            message.data(),
+            message.size_bytes(),
+            0,
+            reinterpret_cast<sockaddr*>(&peer_addr),
+            &peer_addr_len);
+
+        from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
+        return read_bytes;
+    } else if (select_result == 0) {
+        // Timeout occurred
+        return -1; // or any other value to indicate timeout
+    } else {
+        // Error occurred
+        return -2;
+    }
 }
 
 void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
@@ -147,11 +164,76 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
                     clients[clientID] = clientIP;
                     handler(clientID);
 
-                    // Envoyer l'ID client en réponse
-                    sendto(socketFd, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
-                           (struct sockaddr*)&clientAddr, clientAddrLen);
+                    // Send the clientID as a confirmation
+                    int sent = sendto(socketFd, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
+                                      (struct sockaddr*)&clientAddr, clientAddrLen);
+                    if (sent < 0) {
+                        std::cerr << "Failed to send confirmation to client.\n";
+                    }
                 }
             }
+        }
+    }).detach();
+}
+
+void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
+    std::thread([this, handler]() {
+        uint64_t clientID;
+        sockaddr_in serverAddr{};
+        socklen_t serverAddrLen = sizeof(serverAddr);
+
+        int received = recvfrom(socketFd, reinterpret_cast<char*>(&clientID), sizeof(clientID), 0,
+                                (struct sockaddr*)&serverAddr, &serverAddrLen);
+        if (received == sizeof(clientID)) {
+            handler(true, clientID);
+        } else {
+            handler(false, 0);
+        }
+    }).detach();
+}
+
+void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) { // TODO: Replace with custom message type
+    std::thread([this, handler]() {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            for (auto it = clients.begin(); it != clients.end();) {
+                sockaddr_in clientAddr{};
+                socklen_t clientAddrLen = sizeof(clientAddr);
+
+                std::string pingMessage = "PING";
+                int sent = sendto(socketFd, pingMessage.c_str(), pingMessage.size(), 0,
+                                  (struct sockaddr*)&clientAddr, clientAddrLen);
+
+                char buffer[1024];
+                std::string from;
+                int received = ReceiveFrom(from, std::span<char, 65535>(buffer, sizeof(buffer) - 1));
+
+                if (received < 0) {
+                    uint64_t clientID = it->first;
+                    it = clients.erase(it);
+                    handler(clientID);
+                } else {
+                    ++it;
+                }
+            }
+        }
+    }).detach();
+}
+
+void Falcon::OnDisconnect(std::function<void()> handler) {
+    std::thread([this, handler]() {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        sockaddr_in serverAddr{};
+        socklen_t serverAddrLen = sizeof(serverAddr);
+
+        char buffer[1024];
+        std::string from;
+        int received = ReceiveFrom(from, std::span<char, 65535>(buffer, sizeof(buffer) - 1));
+
+        if (received < 0) {
+            handler();
         }
     }).detach();
 }

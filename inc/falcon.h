@@ -51,8 +51,8 @@ private:
     int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
 
     int socketFd; // Identifiant du socket
-    __int128 nextClientID = 1; // ID unique attribué aux clients
-    std::unordered_map<__int128, std::string> clients; // Liste des clients connectés
+    uint64_t nextClientID = 1; // ID unique attribué aux clients
+    std::unordered_map<uint64_t, std::string> clients; // Liste des clients connectés
     uint32_t nextStreamID = 1; // ID unique des Streams
     std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
 
