@@ -14,7 +14,7 @@
 #endif
 
 struct ConnectionInfo {
-    __int128 uuid;
+    uint64_t uuid;
     uint32_t messageType; // 1 = CONNECT, 2 = DISCONNECT
     char message[256];
 };
