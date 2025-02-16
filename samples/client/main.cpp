@@ -19,4 +19,23 @@ int main() {
     falcon->ReceiveFrom(from_ip, buffer);
     spdlog::debug("Received message: {}", buffer.data());
     return EXIT_SUCCESS;
+
+    Falcon client;
+    client.Connect("127.0.0.1", 5556);
+
+    client.OnConnectionEvent([&](bool success, uint64_t clientID) {
+        if (success) {
+            std::cout << "Connected to server with ID " << clientID << "\n";
+            auto stream = client.CreateStream(true);
+
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::string message = "Hello from Client!";
+            stream->SendData(std::span<const char>(message.data(), message.size()));
+        } else {
+            std::cerr << "Connection failed!\n";
+        }
+    });
+
+    while (true) {}
+
 }

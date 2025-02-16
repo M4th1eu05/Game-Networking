@@ -26,4 +26,18 @@ int main()
     }
     falcon->SendTo(ip, port, std::span {buffer.data(), static_cast<unsigned long>(recv_size)});
     return EXIT_SUCCESS;
+
+    Falcon server;
+    server.Listen("127.0.0.1", 5555);
+
+    server.OnClientConnected([&](uint64_t clientID) {
+        std::cout << "Client " << clientID << " connected!\n";
+        auto stream = server.CreateStream(clientID, true);
+
+        stream->OnDataReceived([](std::span<const char> data) {
+            std::cout << "Received: " << std::string(data.begin(), data.end()) << "\n";
+        });
+    });
+
+    while (true) {}
 }
