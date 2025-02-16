@@ -5,7 +5,7 @@
 #include <string>
 #include <span>
 #include <unordered_map>
-#include "Stream.h"
+#include "stream.h"
 
 #ifdef WIN32
     using SocketType = unsigned int;
