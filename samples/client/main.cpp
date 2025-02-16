@@ -9,7 +9,7 @@ int main() {
     spdlog::debug("This is the client!");
 
     Falcon client;
-    client.ConnectTo("127.0.0.1", 5556);
+    client.ConnectTo("127.0.0.1", 5555);
 
     client.OnConnectionEvent([&](bool success, uint64_t clientID) {
         if (success) {
