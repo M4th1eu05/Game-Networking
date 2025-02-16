@@ -1,4 +1,4 @@
-﻿#include "Stream.h"
+﻿#include "stream.h"
 #include <iostream>
 #include <cstring>
 #include <thread>
