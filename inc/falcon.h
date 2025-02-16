@@ -30,8 +30,8 @@ public:
     Falcon(Falcon&&) = default;
     Falcon& operator=(Falcon&&) = default;
 
-    static std::unique_ptr<Falcon> Listen(const std::string& endpoint, uint16_t port);
-    static std::unique_ptr<Falcon> Listen(uint16_t port);
+    [[nodiscard]] static std::unique_ptr<Falcon> Listen(const std::string& endpoint, uint16_t port);
+    [[nodiscard]] static std::unique_ptr<Falcon> Listen(uint16_t port);
     void ConnectTo(const std::string& serverIp, uint16_t port);
 
     int SendTo(const std::string& to, uint16_t port, std::span<const char> message);
@@ -43,8 +43,8 @@ public:
     void OnDisconnect(std::function<void()> handler);
 
     // Gestion des Streams
-    std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
-    std::unique_ptr<Stream> CreateStream(bool reliable);
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable);
     void CloseStream(const Stream& stream);
     void SendData(uint32_t streamID, std::span<const char> data);
     void OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler);
