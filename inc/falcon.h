@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <queue>
 #include <string>
 #include <span>
 #include <unordered_map>
@@ -19,6 +20,12 @@ enum MsgType: uint8_t {
     MSG_STANDARD,
     MSG_ACK,
     PING
+};
+
+struct Msg {
+    std::string IP;
+    int Port;
+    std::vector<char> data;
 };
 
 struct MsgConn {
@@ -85,6 +92,16 @@ public:
 private:
     int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
     int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
+    [[nodiscard]] static std::unique_ptr<Falcon> ListenInternal(const std::string& endpoint, uint16_t port);
+
+
+    int portFromIp(std::string& ip);
+
+    std::queue<Msg> messageQueue;
+    std::mutex queueMutex;
+
+    template<typename T>
+    bool processMessage(const Msg& msg, uint8_t expectedType, T& out);
 
     int socketFd; // Identifiant du socket
     uint64_t nextClientID = 1; // ID unique attribué aux clients
