@@ -13,10 +13,42 @@
     using SocketType = int;
 #endif
 
-struct ConnectionInfo {
-    uint64_t uuid;
-    uint32_t messageType; // 1 = CONNECT, 2 = DISCONNECT
-    char message[256];
+enum MsgType: uint8_t {
+    MSG_CONN,
+    MSG_CONN_ACK,
+    MSG_STANDARD,
+    MSG_ACK,
+    PING
+};
+
+struct MsgConn {
+    uint8_t messageType;
+};
+
+struct MsgConnAck {
+    uint8_t messageType;
+    uint64_t clientID;
+};
+
+struct MsgStandard {
+    uint8_t messageType;
+    uint64_t clientID;
+    uint32_t streamID;
+    uint32_t packetID;
+};
+
+struct MsgAck {
+    uint8_t messageType;
+    uint64_t clientID;
+    uint32_t streamID;
+    uint32_t packetID;
+};
+
+struct Ping {
+    uint8_t messageType;
+    uint8_t pingID;
+    uint64_t clientID;
+    uint64_t timestamp;
 };
 
 class Stream;

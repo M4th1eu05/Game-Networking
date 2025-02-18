@@ -94,7 +94,6 @@ Falcon::~Falcon() {
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port) {
     sockaddr local_endpoint = StringToIp(endpoint, port);
-    std::cout << "StringToIp() returned family: " << local_endpoint.sa_family << std::endl;
 
     auto falcon = std::make_unique<Falcon>();
     falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
@@ -128,17 +127,13 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
     // Prepare the connection message
-    ConnectionInfo connInfo;
-    connInfo.messageType = 1; // Example message type
-    std::strncpy(connInfo.message, "CONNECT", sizeof(connInfo.message) - 1);
-    connInfo.message[sizeof(connInfo.message) - 1] = '\0'; // Ensure null-termination
+    MsgConn connInfo{MSG_CONN};
 
     std::vector<char> buffer(sizeof(connInfo));
     std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
 
-    // Send the connection request to the server
-    int sent = sendto(m_socket, buffer.data(), buffer.size(), 0,
-                      (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+    int sent = SendTo(serverIp, port, buffer);
+
     if (sent < 0) {
         throw std::runtime_error("Failed to send connection request");
     }
@@ -162,98 +157,22 @@ int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const
 
 int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> message)
 {
-    struct sockaddr_storage peer_addr;
-    socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
+    sockaddr_storage peer_addr{};
+    socklen_t peer_addr_len = sizeof( sockaddr_storage);
+    const int read_bytes = recvfrom(m_socket,
+        message.data(),
+        message.size_bytes(),
+        0,
+        reinterpret_cast<sockaddr*>(&peer_addr),
+        &peer_addr_len);
 
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(m_socket, &read_fds);
+    from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
-    struct timeval timeout;
-    timeout.tv_sec = 1; // 1 second
-    timeout.tv_usec = 0;
-
-    int select_result = select(m_socket + 1, &read_fds, nullptr, nullptr, &timeout);
-    if (select_result > 0 && FD_ISSET(m_socket, &read_fds)) {
-        const int read_bytes = recvfrom(m_socket,
-            message.data(),
-            message.size_bytes(),
-            0,
-            reinterpret_cast<sockaddr*>(&peer_addr),
-            &peer_addr_len);
-
-        from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
-        return read_bytes;
-    } else if (select_result == 0) {
-        // Timeout occurred
-        return -1; // or any other value to indicate timeout
-    } else {
-        // Error occurred
-        return -2;
+    if (read_bytes < 0) {
+        std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
     }
-}
 
-void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) { // TODO: replace nextclient and stuff with UUID + Check if received message is a connection message
-    std::thread([this, handler]() {
-        std::cout << "Listening for connections on server" << "\n";
-        while (true) {
-            char buffer[1024];
-            sockaddr_in clientAddr{};
-            int clientAddrLen = sizeof(clientAddr);
-
-            int received = recvfrom(m_socket, buffer, sizeof(buffer) - 1, 0,
-                                    (struct sockaddr*)&clientAddr, &clientAddrLen);
-            if (received > 0) {
-                buffer[received] = '\0';
-
-                std::string clientIP = inet_ntoa(clientAddr.sin_addr);
-                bool clientExists = false;
-                for (const auto& [id, ip] : clients) {
-                    if (ip == clientIP) {
-                        clientExists = true;
-                        break;
-                    }
-                }
-
-                std::cout << "Message received from client attempting to connect" << "\n";
-
-                if (!clientExists) {
-
-                    uint64_t clientID = nextClientID++;
-                    clients[clientID] = clientIP;
-
-                    std::cout << "Client did not exist, adding it to our list. ID : " << clientID << "\n";
-
-                    handler(clientID);
-
-                    // Send the clientID as a confirmation
-                    int sent = sendto(m_socket, reinterpret_cast<const char*>(&clientID), sizeof(clientID), 0,
-                                      (struct sockaddr*)&clientAddr, clientAddrLen);
-                    if (sent == SOCKET_ERROR)
-                        std::cerr << "Failed to send confirmation to client.\n";
-                }
-            }
-            else {
-                //std::cerr << "Failed to receive message from client. Error: " << WSAGetLastError() << "\n";
-            }
-        }
-    }).detach();
-}
-
-void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) { // TODO: Check if received message is a connection message
-    std::thread([this, handler]() {
-        uint64_t clientID;
-        sockaddr_in serverAddr{};
-        socklen_t serverAddrLen = sizeof(serverAddr);
-
-        int received = recvfrom(m_socket, reinterpret_cast<char*>(&clientID), sizeof(clientID), 0,
-                                (struct sockaddr*)&serverAddr, &serverAddrLen);
-        if (received == sizeof(clientID)) {
-            handler(true, clientID);
-        } else {
-            handler(false, 0);
-        }
-    }).detach();
+    return read_bytes;
 }
 
 void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) { // TODO: Replace with custom message type
