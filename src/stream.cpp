@@ -4,7 +4,10 @@
 #include <thread>
 #include <chrono>
 
-Stream::Stream(uint32_t id, bool reliable) : streamID(id), reliable(reliable) {
+#include "falcon.h"
+
+Stream::Stream(uint32_t streamID, bool reliable, Falcon& socketRef, const std::string& remoteIP, uint16_t remotePort)
+    : streamID(streamID), reliable(reliable), socket(socketRef), remoteIP(remoteIP), remotePort(remotePort) {
     if (reliable) {
         std::thread(&Stream::ResendLostPackets, this).detach();
     }
@@ -17,23 +20,22 @@ void Stream::SendData(std::span<const char> data) {
 
     std::vector<char> packet(sizeof(packetID) + data.size());
 
-    // Copier packetID et données dans le buffer
+    // Copy packetID and data into the buffer
     std::memcpy(packet.data(), &packetID, sizeof(packetID));
     std::memcpy(packet.data() + sizeof(packetID), data.data(), data.size());
 
     std::cout << "Stream " << streamID << " sending data: "
               << std::string(data.begin(), data.end()) << "\n";
 
-    // Simuler une perte de paquet (10% de chance)
-    if (reliable && (rand() % 10) == 0) {
-        std::cout << "Packet lost, resending...\n";
-        SendData(data); // Réessai immédiat pour un Stream fiable
+    // Use Falcon's SendTo method instead of Winsock's sendto
+    int sent = socket.SendTo(remoteIP, remotePort, packet);
+    if (sent < 0) {
+        std::cerr << "Failed to send packet." << std::endl;
     }
 }
 
-void Stream::OnDataReceived(std::function<void(std::span<const char>)> handler) {
-    std::cout << "Stream " << streamID << " waiting for data...\n";
-    // Cette fonction sera déclenchée par le serveur lorsqu'il reçoit des données
+void Stream::OnDataReceived(std::span<const char> data) {
+    std::cout << "Stream" << streamID << " received data \n";
 }
 
 void Stream::Acknowledge(uint32_t packetID) {

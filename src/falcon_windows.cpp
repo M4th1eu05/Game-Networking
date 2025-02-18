@@ -109,6 +109,8 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t por
         return nullptr;
     }
 
+    port = ntohs(reinterpret_cast<sockaddr_in*>(&local_endpoint)->sin_port);
+
     std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
     return falcon;
 }
@@ -151,6 +153,22 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const char> message)
 {
     const sockaddr destination = StringToIp(to, port);
+    int error = sendto(m_socket,
+        message.data(),
+        message.size(),
+        0,
+        &destination,
+        sizeof(destination));
+    return error;
+}
+
+int Falcon::SendToInternal(const uint64_t clientID, const std::span<const char> message) {
+    const auto it = clients.find(clientID);
+    if (it == clients.end()) {
+        return -1;
+    }
+
+    const sockaddr destination = StringToIp(it->second, port);
     int error = sendto(m_socket,
         message.data(),
         message.size(),
@@ -249,6 +267,7 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) { //
         int received = recvfrom(m_socket, reinterpret_cast<char*>(&clientID), sizeof(clientID), 0,
                                 (struct sockaddr*)&serverAddr, &serverAddrLen);
         if (received == sizeof(clientID)) {
+            port = ntohs(serverAddr.sin_port);
             handler(true, clientID);
         } else {
             handler(false, 0);
@@ -298,6 +317,39 @@ void Falcon::OnDisconnect(std::function<void()> handler) {
 
         if (received < 0) {
             handler();
+        }
+    }).detach();
+}
+
+void Falcon::OnDataReceived(std::function<void(std::span<const char>)> handler) {
+    std::thread([this, handler]() {
+        std::cout << "Listening for stream data on server" << "\n";
+        while (true) {
+            std::string clientIP;
+            std::array<char, 65535> buffer;
+
+            int received = ReceiveFrom(clientIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
+
+            /*
+            if (received > 0) {
+                // Extract the streamID from the message
+                uint32_t streamID;
+                std::memcpy(&streamID, buffer, sizeof(streamID));
+
+                std::cout << "Received data for stream " << streamID << "\n";
+
+                // Check if the stream exists
+                if (streams.find(streamID) != streams.end()) {
+                    // Forward the data to the Stream's OnDataReceived()
+                    auto streamData = std::span<const char>(buffer + sizeof(streamID), received - sizeof(streamID));
+                    streams[streamID]->OnDataReceived(streamData);
+                } else {
+                    std::cerr << "Error: Stream " << streamID << " does not exist!\n";
+                }
+            } else {
+                std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << "\n";
+            }
+            */
         }
     }).detach();
 }

@@ -8,18 +8,18 @@ std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
     uint32_t streamID = nextStreamID++;
     std::cout << "Creating Stream " << streamID << " for client " << client << "\n";
 
-    auto stream = std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(streamID, reliable, client, *this);
     streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    return std::make_unique<Stream>(streamID, reliable, client, *this);
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
     uint32_t streamID = nextStreamID++;
     std::cout << "Creating Stream " << streamID << " for client\n";
 
-    auto stream = std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(streamID, reliable, 0, *this);
     streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    return std::make_unique<Stream>(streamID, reliable, 0, *this);
 }
 
 void Falcon::CloseStream(const Stream& stream) {
@@ -30,6 +30,10 @@ void Falcon::CloseStream(const Stream& stream) {
 int Falcon::SendTo(const std::string &to, uint16_t port, const std::span<const char> message)
 {
     return SendToInternal(to, port, message);
+}
+
+int Falcon::SendTo(const uint64_t clientID, std::span<const char> message) {
+    return SendToInternal(clientID, message);
 }
 
 int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
@@ -46,13 +50,6 @@ void Falcon::SendData(uint32_t streamID, std::span<const char> data) {
     }
 }
 
-void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler) {
-    if (streams.find(streamID) != streams.end()) {
-        streams[streamID]->OnDataReceived(handler);
-    } else {
-        std::cerr << "Error: Stream " << streamID << " does not exist!\n";
-    }
-}
 
 std::unique_ptr<Falcon> Falcon::Listen(const uint16_t port)
 {
