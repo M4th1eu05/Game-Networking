@@ -80,13 +80,13 @@ std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint
     auto falcon = std::make_unique<Falcon>();
     falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
     if (falcon->m_socket == INVALID_SOCKET) {
-        std::cerr << "Socket creation failed with error: " << WSAGetLastError() << std::endl;
+
         return nullptr;
     }
 
     if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0) {
-        std::cerr << "Socket bind failed with error: " << WSAGetLastError() << std::endl;
-        closesocket(falcon->m_socket);
+
+        close(falcon->m_socket);
         return nullptr;
     }
 
