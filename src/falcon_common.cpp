@@ -81,9 +81,9 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
         while (true) {
             std::string clientIP;
             int clientPort;
-            std::array<char, 65535> buffer;
+            std::vector<char> buffer(65535);
 
-            int received = falcon->ReceiveFrom(clientIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
+            int received = falcon->ReceiveFrom(clientIP, std::span<char, 65535>(buffer.data(), buffer.size()));
 
             if (received < 0) {
                 std::cerr << "Failed to receive message\n";
