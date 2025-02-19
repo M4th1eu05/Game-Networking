@@ -105,7 +105,6 @@ private:
     template<typename T>
     bool processMessage(const Msg& msg, uint8_t expectedType, T& out);
 
-    int socketFd; // Identifiant du socket
     uint64_t nextClientID = 1; // ID unique attribué aux clients
     std::unordered_map<uint64_t, std::string> clients; // Liste des clients connectés
     std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastPingsTime;

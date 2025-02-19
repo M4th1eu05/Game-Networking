@@ -92,8 +92,8 @@ std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint
 void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 {
     // Create the socket
-    socketFd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socketFd < 0) {
+    m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (m_socket < 0) {
         throw std::runtime_error("Socket creation failed");
     }
 
@@ -112,22 +112,23 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     int sent = SendTo(serverIp, port, buffer);
 
     if (sent < 0) {
-        throw std::runtime_error("Failed to send connection request");
+        std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;
     }
     else {
-        std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
+        // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
     }
 
     std::thread([this, serverIp]() {
         while (true) {
             std::string serverIP = serverIp;
             int serverPort;
-            std::array<char, 65535> buffer;
+            std::vector<char> buffer(65535);
 
-            int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
+            int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), buffer.size()));
 
             if (received < 0) {
-                throw std::runtime_error("Failed to receive message");
+                std::cerr << "Failed to receive message\n";
+                continue;
             }
             if (received > 0) {
                 serverPort = portFromIp(serverIP);
