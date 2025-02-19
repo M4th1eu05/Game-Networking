@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <queue>
+#include <mutex>
 #include <string>
 #include <span>
 #include <unordered_map>
