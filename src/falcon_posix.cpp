@@ -76,21 +76,16 @@ Falcon::~Falcon() {
 std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint16_t port)
 {
     sockaddr local_endpoint = StringToIp(endpoint, port);
-
     auto falcon = std::make_unique<Falcon>();
-    falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
-    if (falcon->m_socket == INVALID_SOCKET) {
-
-        return nullptr;
-    }
-
-    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0) {
-
+    falcon->m_socket = socket(local_endpoint.sa_family,
+        SOCK_DGRAM,
+        IPPROTO_UDP);
+    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0)
+    {
         close(falcon->m_socket);
         return nullptr;
     }
 
-    // std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
     return falcon;
 }
 
