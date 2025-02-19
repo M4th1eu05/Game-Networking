@@ -76,16 +76,21 @@ Falcon::~Falcon() {
 std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint16_t port)
 {
     sockaddr local_endpoint = StringToIp(endpoint, port);
+
     auto falcon = std::make_unique<Falcon>();
-    falcon->m_socket = socket(local_endpoint.sa_family,
-        SOCK_DGRAM,
-        IPPROTO_UDP);
-    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0)
-    {
-        close(falcon->m_socket);
+    falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
+    if (falcon->m_socket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed with error: " << WSAGetLastError() << std::endl;
         return nullptr;
     }
 
+    if (int error = bind(falcon->m_socket, &local_endpoint, sizeof(local_endpoint)); error != 0) {
+        std::cerr << "Socket bind failed with error: " << WSAGetLastError() << std::endl;
+        closesocket(falcon->m_socket);
+        return nullptr;
+    }
+
+    // std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
     return falcon;
 }
 
@@ -159,33 +164,20 @@ int Falcon::SendToInternal(const std::string &to, uint16_t port, std::span<const
 
 int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> message)
 {
-    struct sockaddr_storage peer_addr;
-    socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
+    sockaddr_storage peer_addr{};
+    socklen_t peer_addr_len = sizeof( sockaddr_storage);
+    const int read_bytes = recvfrom(m_socket,
+        message.data(),
+        message.size_bytes(),
+        0,
+        reinterpret_cast<sockaddr*>(&peer_addr),
+        &peer_addr_len);
 
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(m_socket, &read_fds);
+    from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
-    struct timeval timeout;
-    timeout.tv_sec = 1; // 1 second
-    timeout.tv_usec = 0;
-
-    int select_result = select(m_socket + 1, &read_fds, nullptr, nullptr, &timeout);
-    if (select_result > 0 && FD_ISSET(m_socket, &read_fds)) {
-        const int read_bytes = recvfrom(m_socket,
-            message.data(),
-            message.size_bytes(),
-            0,
-            reinterpret_cast<sockaddr*>(&peer_addr),
-            &peer_addr_len);
-
-        from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
-        return read_bytes;
-    } else if (select_result == 0) {
-        // Timeout occurred
-        return -1; // or any other value to indicate timeout
-    } else {
-        // Error occurred
-        return -2;
+    if (read_bytes < 0) {
+        // std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
     }
+
+    return read_bytes;
 }
