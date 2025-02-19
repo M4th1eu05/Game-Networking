@@ -89,6 +89,7 @@ Falcon::~Falcon() {
     if(m_socket != INVALID_SOCKET)
     {
         closesocket(m_socket);
+        std::cout << "Socket closed" << std::endl;
     }
 }
 
@@ -195,7 +196,7 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
     if (read_bytes < 0) {
-        // std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
+        std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
     }
 
     return read_bytes;

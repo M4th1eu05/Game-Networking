@@ -86,7 +86,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
             int received = falcon->ReceiveFrom(clientIP, std::span<char, 65535>(buffer.data(), buffer.size()));
 
             if (received < 0) {
-                std::cerr << "Failed to receive message\n";
+                // std::cerr << "Failed to receive message\n";
                 continue;
             }
             if (received > 0) {
@@ -100,7 +100,6 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
                 std::lock_guard<std::mutex> lock(falcon->queueMutex);
                 falcon->messageQueue.push(msg);
             }
-
         }
     }).detach();
 
@@ -108,7 +107,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
 }
 
 
-void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
+void Falcon::OnClientConnected(const std::function<void(uint64_t)>& handler) {
     std::thread([this, handler]() {
         // spdlog::debug("Listening for connections on server");
         MsgConn msgConn;
@@ -129,9 +128,10 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
                 messageQueue.pop();
             }
 
-            // spdlog::debug("Connection request received from {}:{}\n", msg.IP, msg.Port);
+            std::cout << "Client connected from " << msg.IP << ":" << msg.Port << std::endl;
             // check if client exists
             bool clientExists = false;
+            std::lock_guard<std::mutex> lock_clients(clientsMutex);
             for (const auto& [id, ip] : clients) {
                 if (ip == msg.IP) {
                     clientExists = true;
@@ -146,7 +146,9 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
             // add client to list
             uint64_t clientID = nextClientID++;
             clients[clientID] = msg.IP + ":" + std::to_string(msg.Port);
+            std::lock_guard<std::mutex> lock_ping(lastPingsTimeMutex);
             lastPingsTime[clientID] = std::chrono::steady_clock::now();
+            std::lock_guard<std::mutex> lock_pinged(pingedClientsMutex);
             pingedClients[clientID] = false;
 
             // send clientID to client
@@ -159,7 +161,7 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
             int sent = SendTo(msg.IP, msg.Port, message);
 
             if (sent < 0) {
-                // spdlog::error("Failed to send connection ack to {}:{}\n", msg.IP, msg.Port);
+                std::cerr << "Failed to send connection ack to " << msg.IP << ":" << msg.Port << std::endl;
             } else {
                 // spdlog::debug("Connection ack sent to {}:{}\n", msg.IP, msg.Port);
             }
@@ -205,6 +207,7 @@ void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) {
         uint8_t pingID = 0;
         std::chrono::steady_clock::time_point time;
         while (true) {
+            std::lock_guard<std::mutex> lock_clients(clientsMutex);
             for (const auto& client: clients) {
                 Ping receive_ping;
                 Msg msg;
@@ -224,11 +227,14 @@ void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) {
                     messageQueue.pop();
                 }
 
+                std::lock_guard<std::mutex> lock_pinged(pingedClientsMutex);
                 pingedClients[receive_ping.clientID] = false;
+                std::lock_guard<std::mutex> lock_ping(lastPingsTimeMutex);
                 lastPingsTime[receive_ping.clientID] = std::chrono::steady_clock::now();
             }
 
 
+            std::lock_guard<std::mutex> lock_pinged(lastPingsTimeMutex);
             for (auto client_ping: lastPingsTime) {
                 std::chrono::duration<double> delta_t = std::chrono::steady_clock::now() - client_ping.second;
 

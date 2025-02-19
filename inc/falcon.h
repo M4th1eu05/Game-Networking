@@ -78,7 +78,7 @@ public:
     int SendTo(const std::string& to, uint16_t port, std::span<const char> message);
     int ReceiveFrom(std::string& from, std::span<char, 65535> message);
 
-    void OnClientConnected(std::function<void(uint64_t)> handler);
+    void OnClientConnected(const std::function<void(uint64_t)>& handler);
     void OnConnectionEvent(std::function<void(bool, uint64_t)> handler);
     void OnClientDisconnected(std::function<void(uint64_t)> handler);
     void OnDisconnect(std::function<void()> handler);
@@ -102,13 +102,19 @@ private:
     std::queue<Msg> messageQueue;
     std::mutex queueMutex;
 
+    std::mutex clientsMutex;
+    std::unordered_map<uint64_t, std::string> clients;
+
+    std::mutex lastPingsTimeMutex;
+    std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastPingsTime;
+
+    std::mutex pingedClientsMutex;
+    std::unordered_map<uint64_t, bool> pingedClients;
+
     template<typename T>
     bool processMessage(const Msg& msg, uint8_t expectedType, T& out);
 
     uint64_t nextClientID = 1; // ID unique attribué aux clients
-    std::unordered_map<uint64_t, std::string> clients; // Liste des clients connectés
-    std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastPingsTime;
-    std::unordered_map<uint64_t, bool> pingedClients;
     uint32_t nextStreamID = 1; // ID unique des Streams
     std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
 

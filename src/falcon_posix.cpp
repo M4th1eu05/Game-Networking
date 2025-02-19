@@ -109,7 +109,8 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     std::vector<char> buffer(sizeof(connInfo));
     std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
 
-    int sent = SendTo(serverIp, port, buffer);
+    int sent = sendto(m_socket, buffer.data(), buffer.size(), 0,
+                      (struct sockaddr*)&serverAddr, sizeof(serverAddr));
 
     if (sent < 0) {
         std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;

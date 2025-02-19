@@ -14,18 +14,17 @@ TEST_CASE("Can Listen", "[falcon]") {
 }
 
 TEST_CASE("Client can connect to server", "[falcon]") {
-    std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
+    spdlog::set_level(spdlog::level::debug);
 
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-
-    server->OnClientConnected([&](uint64_t clientID) {
-        spdlog::debug("Client connected with ID {}", clientID);
-    });
-
-    std::unique_ptr<Falcon> client = std::make_unique<Falcon>();
-
+    const std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
+    const auto client = std::make_unique<Falcon>();
     bool connectionSuccess = false;
     uint64_t clientID = 0;
+
+
+    server->OnClientConnected([&](uint64_t id) {
+        spdlog::debug("Client connected with ID {}", id);
+    });
 
     REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
 
