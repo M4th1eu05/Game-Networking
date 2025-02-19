@@ -5,6 +5,7 @@
 #include <mutex>
 
 #include "stream.h"
+#include "spdlog/spdlog.h"
 
 template<typename T>
 bool Falcon::processMessage(const Msg &msg, uint8_t expectedType, T& out) {
@@ -82,10 +83,9 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
 
             int received = falcon->ReceiveFrom(clientIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
 
-            std::cout << "Received " << received << " bytes from " << clientIP << "\n";
-
             if (received < 0) {
-                throw std::runtime_error("Failed to receive message");
+                std::cerr << "Failed to receive message\n";
+                continue;
             }
             if (received > 0) {
                 clientPort = falcon->portFromIp(clientIP);
@@ -144,6 +144,8 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
             // add client to list
             uint64_t clientID = nextClientID++;
             clients[clientID] = msg.IP + ":" + std::to_string(msg.Port);
+            lastPingsTime[clientID] = std::chrono::steady_clock::now();
+            pingedClients[clientID] = false;
 
             // send clientID to client
             MsgConnAck msgConnAck = {MSG_CONN_ACK, clientID};
@@ -173,6 +175,7 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
             Msg msg;
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
+
                 if (messageQueue.empty()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
@@ -181,87 +184,124 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
 
                 // check if message is a connection message before popping
                 if (!processMessage<MsgConnAck>(msg, MSG_CONN_ACK, msgConnAck)) {
-                    handler(false, 0);
-                    continue;
+                    break;
                 }
                 messageQueue.pop();
             }
 
             handler(true, msgConnAck.clientID);
         }
+        handler(false, 0);
     }).detach();
 }
 
 void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) {
     std::thread([this, handler]() {
+
+        uint8_t pingID = 0;
+        std::chrono::steady_clock::time_point time;
         while (true) {
+            for (const auto& client: clients) {
+                Ping receive_ping;
+                Msg msg;
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    if (messageQueue.empty()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        continue;
+                    }
+                    msg = messageQueue.front();
+
+                    // check if message is a ping message before popping
+                    if (!processMessage<Ping>(msg, PING, receive_ping)) {
+                        continue;
+                    }
+
+                    messageQueue.pop();
+                }
+
+                pingedClients[receive_ping.clientID] = false;
+                lastPingsTime[receive_ping.clientID] = std::chrono::steady_clock::now();
+            }
+
+
+            for (auto client_ping: lastPingsTime) {
+                std::chrono::duration<double> delta_t = std::chrono::steady_clock::now() - client_ping.second;
+
+                uint64_t clientID = client_ping.first;
+                std::string clientIP = clients[clientID];
 
 
 
+                if (delta_t.count() < 0) {
+                    std::cerr << "Error: Negative time difference\n";
+                    continue;
+                }
+                else if (delta_t.count() < 1 && !pingedClients[clientID]) { // less than 1 second
+                    continue;
+                }
+                else if (delta_t.count() < 2) { // 1-2 seconds
 
-            // std::this_thread::sleep_for(std::chrono::seconds(1));
-            //
-            // for (auto client: clients) {
-            //
-            //     Ping ping = {PING, 0, client.first, 0};
-            //     int port = portFromIp(client.second);
-            //
-            //     int sent = SendTo(client.second, port, std::span<const char>((char*)&ping, sizeof(ping)));
-            //
-            //     if (sent < 0) {
-            //         std::cerr << "Failed to send ping to " << client.second << ":" << port << "\n";
-            //     }
-            // }
-            //
-            // std::this_thread::sleep_for(std::chrono::seconds(1));
-            //
-            // for (auto client: clients) {
-            //     std::string from;
-            //     std::array<char, 65535> buffer{};
-            //
-            //     int received = ReceiveFrom(from, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
-            //
-            //     // turn buffer into ping
-            //     Ping ping;
-            //     try {
-            //         std::memcpy(&ping, buffer.data(), sizeof(ping));
-            //         if (ping.messageType != PING) {
-            //             std::cerr << "Error: Received message is not a ping message\n";
-            //             continue;
-            //         }
-            //     } catch (std::exception& e) {
-            //         std::cerr << "Error: " << e.what() << "\n";
-            //     }
-            //
-            //     if (received == sizeof(ping)) {
-            //         if (ping.clientID == client.first) {
-            //             std::cout << "Client " << client.first << " is still connected\n";
-            //         }
-            //         else {
-            //             std::cout << "Client " << client.first << " has disconnected\n";
-            //             handler(client.first);
-            //         }
-            //     }
-            // }
-            
+                    if (pingedClients[clientID]) {
+                        continue;
+                    }
+
+                    time = std::chrono::steady_clock::now();
+                    Ping ping = {PING, pingID, clientID, time};
+                    int port = portFromIp(clientIP);
+
+                    int sent = SendTo(clientIP, port, std::span<const char>((char*)&ping, sizeof(ping)));
+
+                    if (sent < 0) {
+                        std::cerr << "Failed to send ping to " << clientIP << ":" << port << "\n";
+                    }
+
+                    pingedClients[clientID] = true;
+                    std::cout << "Ping sent to " << clientIP << ":" << port << "\n";
+
+                }
+                else if (pingedClients[clientID] && delta_t.count() > 2) { // more than 2 seconds
+                    clients.erase(clientID);
+                    lastPingsTime.erase(clientID);
+                    pingedClients.erase(clientID);
+                    handler(clientID);
+                }
+            }
+
+            pingID++;
         }
     }).detach();
 }
 
 void Falcon::OnDisconnect(std::function<void()> handler) {
     std::thread([this, handler]() {
-        // std::this_thread::sleep_for(std::chrono::seconds(1));
-        //
-        // sockaddr_in serverAddr{};
-        // socklen_t serverAddrLen = sizeof(serverAddr);
-        //
-        // char buffer[1024];
-        // std::string from;
-        // int received = ReceiveFrom(from, std::span<char, 65535>(buffer, sizeof(buffer) - 1));
-        //
-        // if (received < 0) {
-        //     handler();
-        // }
+        while (true) {
+            Ping receive_ping;
+            Msg msg;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                if (messageQueue.empty()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
+                msg = messageQueue.front();
+
+                // check if message is a ping message before popping
+                if (!processMessage<Ping>(msg, PING, receive_ping)) {
+                    continue;
+                }
+                messageQueue.pop();
+            }
+
+
+            int sent = SendTo(msg.IP, msg.Port, std::span<const char>((char*)&receive_ping, sizeof(receive_ping)));
+
+            if (sent < 0) {
+                std::cerr << "Failed to send ping ack to " << msg.IP << ":" << msg.Port << "\n";
+            }
+
+            std::cout << "Ping ack sent to " << msg.IP << ":" << msg.Port << "\n";
+        }
     }).detach();
 }
 

@@ -149,8 +149,6 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 
             int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
 
-            std::cout << "Received " << received << " bytes from " << serverIP << "\n";
-
             if (received < 0) {
                 throw std::runtime_error("Failed to receive message");
             }
