@@ -108,7 +108,7 @@ std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint
         return nullptr;
     }
 
-    std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
+    // std::cout << "Server is listening on " << endpoint << ":" << port << std::endl;
     return falcon;
 }
 
@@ -138,7 +138,7 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
         throw std::runtime_error("Failed to send connection request");
     }
     else {
-        std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
+        // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
     }
 
     std::thread([this, serverIp]() {
@@ -194,7 +194,7 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
     if (read_bytes < 0) {
-        std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
+        // std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
     }
 
     return read_bytes;

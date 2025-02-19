@@ -1,44 +1,44 @@
-// #include <string>
-// #include <array>
-// #include <span>
-// #include <thread>
-//
-// #include <catch2/catch_test_macros.hpp>
-//
-// #include "falcon.h"
-// #include "spdlog/spdlog.h"
-//
-// TEST_CASE("Can Listen", "[falcon]") {
-//     auto receiver = Falcon::Listen("127.0.0.1", 5555);
-//     REQUIRE(receiver != nullptr);
-// }
-//
-// TEST_CASE("Client can connect to server", "[Socket]") {
-//     std::unique_ptr<Falcon> server = Falcon::Listen(5555);
-//     server->OnClientConnected([&](uint64_t clientID) {
-//         spdlog::debug("Client connected with ID {}", clientID);
-//     });
-//
-//     std::unique_ptr<Falcon> client = std::make_unique<Falcon>();
-//     REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
-//
-//     bool connectionSuccess = false;
-//     uint64_t clientID = 0;
-//
-//     client->OnConnectionEvent([&](bool success, uint64_t id) {
-//         spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
-//         connectionSuccess = success;
-//         clientID = id;
-//     });
-//
-//     // Wait for the event to trigger
-//     std::this_thread::sleep_for(std::chrono::seconds(1));
-//
-//     spdlog::debug("Connection success: {}, Client ID: {}", connectionSuccess, clientID);
-//
-//     REQUIRE(connectionSuccess == true);
-//     REQUIRE(clientID > 0);
-// }
+#include <string>
+#include <array>
+#include <span>
+#include <thread>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "falcon.h"
+#include "spdlog/spdlog.h"
+
+TEST_CASE("Can Listen", "[falcon]") {
+    auto receiver = Falcon::Listen("127.0.0.1", 5555);
+    REQUIRE(receiver != nullptr);
+}
+
+TEST_CASE("Client can connect to server", "[Socket]") {
+    std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
+    server->OnClientConnected([&](uint64_t clientID) {
+        spdlog::debug("Client connected with ID {}", clientID);
+    });
+
+    std::unique_ptr<Falcon> client = std::make_unique<Falcon>();
+    REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
+
+    bool connectionSuccess = false;
+    uint64_t clientID = 0;
+
+    client->OnConnectionEvent([&](bool success, uint64_t id) {
+        spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
+        connectionSuccess = success;
+        clientID = id;
+    });
+
+    // Wait for the event to trigger
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    spdlog::debug("Connection success: {}, Client ID: {}", connectionSuccess, clientID);
+
+    REQUIRE(connectionSuccess == true);
+    REQUIRE(clientID > 0);
+}
 //
 // TEST_CASE("Stream sends and receives data", "[Stream]") {
 //     Stream stream(1, false); // Stream non fiable

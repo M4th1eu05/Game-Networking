@@ -3,9 +3,10 @@
 #include "falcon.h"
 #include <iostream>
 #include <mutex>
+#include <chrono>
 
 #include "stream.h"
-#include "spdlog/spdlog.h"
+// #include "spdlog/spdlog.h"
 
 template<typename T>
 bool Falcon::processMessage(const Msg &msg, uint8_t expectedType, T& out) {
@@ -23,7 +24,7 @@ bool Falcon::processMessage(const Msg &msg, uint8_t expectedType, T& out) {
 
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
     uint32_t streamID = nextStreamID++;
-    std::cout << "Creating Stream " << streamID << " for client " << client << "\n";
+    // spdlog::debug("Creating Stream {} for client {}", streamID, client);
 
     auto stream = std::make_unique<Stream>(streamID, reliable);
     streams[streamID] = std::move(stream);
@@ -32,7 +33,8 @@ std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
     uint32_t streamID = nextStreamID++;
-    std::cout << "Creating Stream " << streamID << " for client\n";
+
+    // spdlog::debug("Creating Stream {}", streamID);
 
     auto stream = std::make_unique<Stream>(streamID, reliable);
     streams[streamID] = std::move(stream);
@@ -40,7 +42,7 @@ std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
 }
 
 void Falcon::CloseStream(const Stream& stream) {
-    std::cout << "Closing Stream " << stream.GetStreamID() << "\n";
+    // spdlog::debug("Closing Stream {}", stream.GetStreamID());
     streams.erase(stream.GetStreamID());
 }
 
@@ -108,7 +110,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, uint16_t por
 
 void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
     std::thread([this, handler]() {
-        std::cout << "Listening for connections on server" << "\n";
+        // spdlog::debug("Listening for connections on server");
         MsgConn msgConn;
         while (true) {
             Msg msg;
@@ -127,7 +129,7 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
                 messageQueue.pop();
             }
 
-            std::cout << "Connection request received from " << msg.IP << ":" << msg.Port << "\n";
+            // spdlog::debug("Connection request received from {}:{}\n", msg.IP, msg.Port);
             // check if client exists
             bool clientExists = false;
             for (const auto& [id, ip] : clients) {
@@ -137,7 +139,7 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
                 }
             }
             if (clientExists) {
-                std::cout << "Client already exists, ignoring connection request\n";
+                // spdlog::debug("Client already exists, ignoring connection request\n");
                 continue;
             }
 
@@ -157,9 +159,9 @@ void Falcon::OnClientConnected(std::function<void(uint64_t)> handler) {
             int sent = SendTo(msg.IP, msg.Port, message);
 
             if (sent < 0) {
-                std::cerr << "Failed to send connection ack to " << msg.IP << ": " << msg.Port <<" \n Error: " << sent << "\n";
+                // spdlog::error("Failed to send connection ack to {}:{}\n", msg.IP, msg.Port);
             } else {
-                std::cout << "Connection ack sent to " << msg.IP << ":" << msg.Port << "\n";
+                // spdlog::debug("Connection ack sent to {}:{}\n", msg.IP, msg.Port);
             }
 
             // call handler
@@ -255,11 +257,11 @@ void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) {
                     int sent = SendTo(clientIP, port, std::span<const char>((char*)&ping, sizeof(ping)));
 
                     if (sent < 0) {
-                        std::cerr << "Failed to send ping to " << clientIP << ":" << port << "\n";
+                        // spdlog::error("Failed to send ping to {}:{}\n", clientIP, port);
                     }
 
                     pingedClients[clientID] = true;
-                    std::cout << "Ping sent to " << clientIP << ":" << port << "\n";
+                    // spdlog::debug("Ping sent to {}:{}\n", clientIP, port);
 
                 }
                 else if (pingedClients[clientID] && delta_t.count() > 2) { // more than 2 seconds
@@ -277,7 +279,14 @@ void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) {
 
 void Falcon::OnDisconnect(std::function<void()> handler) {
     std::thread([this, handler]() {
+        std::chrono::steady_clock::time_point time = std::chrono::steady_clock::now();
+
         while (true) {
+            std::chrono::duration<double> delta_t = std::chrono::steady_clock::now() - time;
+            if (delta_t.count() > 5) {
+                break;
+            }
+
             Ping receive_ping;
             Msg msg;
             {
@@ -299,16 +308,19 @@ void Falcon::OnDisconnect(std::function<void()> handler) {
             int sent = SendTo(msg.IP, msg.Port, std::span<const char>((char*)&receive_ping, sizeof(receive_ping)));
 
             if (sent < 0) {
-                std::cerr << "Failed to send ping ack to " << msg.IP << ":" << msg.Port << "\n";
+                // spdlog::error("Failed to send ping ack to {}:{}\n", msg.IP, msg.Port);
             }
 
-            std::cout << "Ping ack sent to " << msg.IP << ":" << msg.Port << "\n";
+            time = std::chrono::steady_clock::now();
+
+            // spdlog::debug("Ping ack sent to {}:{}\n", msg.IP, msg.Port);
         }
+        handler();
     }).detach();
 }
 
 int Falcon::portFromIp(std::string &ip) {
-    size_t colonPos = ip.find(':');
+    int colonPos = ip.find(':');
     if (colonPos != std::string::npos) {
         int port = std::stoi(ip.substr(colonPos + 1, ip.size()));
         ip = ip.substr(0,colonPos);
