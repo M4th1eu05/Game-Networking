@@ -13,7 +13,7 @@ TEST_CASE("Can Listen", "[falcon]") {
     REQUIRE(receiver != nullptr);
 }
 
-TEST_CASE("Client can connect to server", "[Socket]") {
+TEST_CASE("Client can connect to server", "[falcon]") {
     std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
     server->OnClientConnected([&](uint64_t clientID) {
         spdlog::debug("Client connected with ID {}", clientID);

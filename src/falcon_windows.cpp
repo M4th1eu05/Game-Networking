@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <thread>
+#include <array>
 
 #include "falcon.h"
 
@@ -135,7 +136,7 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     int sent = SendTo(serverIp, port, buffer);
 
     if (sent < 0) {
-        throw std::runtime_error("Failed to send connection request");
+        std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;
     }
     else {
         // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
@@ -150,7 +151,8 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
             int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
 
             if (received < 0) {
-                throw std::runtime_error("Failed to receive message");
+                std::cerr << "Failed to receive message\n";
+                continue;
             }
             if (received > 0) {
                 serverPort = portFromIp(serverIP);
