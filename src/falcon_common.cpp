@@ -184,14 +184,16 @@ void Falcon::OnConnectionEvent(std::function<void(bool, uint64_t)> handler) {
 
                 // check if message is a connection message before popping
                 if (!processMessage<MsgConnAck>(msg, MSG_CONN_ACK, msgConnAck)) {
+                    handler(false, 0);
                     break;
                 }
                 messageQueue.pop();
             }
 
             handler(true, msgConnAck.clientID);
+            break;
         }
-        handler(false, 0);
+
     }).detach();
 }
 
