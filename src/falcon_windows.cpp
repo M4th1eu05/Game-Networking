@@ -92,7 +92,7 @@ Falcon::~Falcon() {
     }
 }
 
-std::unique_ptr<Falcon> Falcon::Listen(const std::string& endpoint, uint16_t port) {
+std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint16_t port) {
     sockaddr local_endpoint = StringToIp(endpoint, port);
 
     auto falcon = std::make_unique<Falcon>();
@@ -140,6 +140,31 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     else {
         std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
     }
+
+    std::thread([this, serverIp]() {
+        while (true) {
+            std::string serverIP = serverIp;
+            int serverPort;
+            std::array<char, 65535> buffer;
+
+            int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), sizeof(buffer)));
+
+            if (received < 0) {
+                throw std::runtime_error("Failed to receive message");
+            }
+            if (received > 0) {
+                serverPort = portFromIp(serverIP);
+
+                Msg msg;
+                msg.IP = serverIP;
+                msg.Port = serverPort;
+                msg.data = std::vector<char>(buffer.begin(), buffer.end());
+
+                std::lock_guard<std::mutex> lock(queueMutex);
+                messageQueue.push(msg);
+            }
+        }
+    }).detach();
 }
 
 
@@ -173,50 +198,4 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     }
 
     return read_bytes;
-}
-
-void Falcon::OnClientDisconnected(std::function<void(uint64_t)> handler) { // TODO: Replace with custom message type
-    std::thread([this, handler]() {
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-
-            for (auto it = clients.begin(); it != clients.end();) {
-                sockaddr_in clientAddr{};
-                socklen_t clientAddrLen = sizeof(clientAddr);
-
-                std::string pingMessage = "PING";
-                int sent = sendto(m_socket, pingMessage.c_str(), pingMessage.size(), 0,
-                                  (struct sockaddr*)&clientAddr, clientAddrLen);
-
-                char buffer[1024];
-                std::string from;
-                int received = ReceiveFrom(from, std::span<char, 65535>(buffer, sizeof(buffer) - 1));
-
-                if (received < 0) {
-                    uint64_t clientID = it->first;
-                    it = clients.erase(it);
-                    handler(clientID);
-                } else {
-                    ++it;
-                }
-            }
-        }
-    }).detach();
-}
-
-void Falcon::OnDisconnect(std::function<void()> handler) {
-    std::thread([this, handler]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        sockaddr_in serverAddr{};
-        socklen_t serverAddrLen = sizeof(serverAddr);
-
-        char buffer[1024];
-        std::string from;
-        int received = ReceiveFrom(from, std::span<char, 65535>(buffer, sizeof(buffer) - 1));
-
-        if (received < 0) {
-            handler();
-        }
-    }).detach();
 }

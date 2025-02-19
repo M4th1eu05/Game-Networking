@@ -14,7 +14,7 @@ int main() {
     client->OnConnectionEvent([&](bool success, uint64_t clientID) {
         if (success) {
             std::cout << "Connected to server with ID " << clientID << "\n";
-            // auto stream = client.CreateStream(true);
+            // auto stream = client->CreateStream(true);
             //
             // std::this_thread::sleep_for(std::chrono::seconds(1));
             // std::string message = "Hello from Client!";
@@ -22,6 +22,10 @@ int main() {
         } else {
             std::cerr << "Connection failed!\n";
         }
+    });
+
+    client->OnDisconnect([&]() {
+        std::cerr << "Disconnected from server!\n";
     });
 
     while (true) {}
