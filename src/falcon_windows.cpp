@@ -127,13 +127,9 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     serverAddr.sin_port = htons(port);
     inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
-    // Prepare the connection message
-    MsgConn connInfo{MSG_CONN};
+    MsgConn conn{MSG_CONN};
 
-    std::vector<char> buffer(sizeof(connInfo));
-    std::memcpy(buffer.data(), &connInfo, sizeof(connInfo));
-
-    int sent = SendTo(serverIp, port, buffer);
+    int sent = SendToInternal(serverIp, port, serializeMessage(conn));
 
     if (sent < 0) {
         std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;
@@ -142,28 +138,34 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
         // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
     }
 
-    std::thread([this, serverIp]() {
+    // client thread to handle messages
+    std::thread([this]() {
         while (true) {
-            std::string serverIP = serverIp;
-            int serverPort;
+            std::string serverIp;
             std::vector<char> buffer(65535);
 
-            int received = ReceiveFrom(serverIP, std::span<char, 65535>(buffer.data(), buffer.size()));
+            int received = ReceiveFrom(serverIp, std::span<char, 65535>(buffer.data(), buffer.size()));
 
             if (received < 0) {
-                std::cerr << "Failed to receive message\n";
+                // std::cerr << "Failed to receive message\n";
+                // check if m_client is set
+                if (m_client.lastPing + std::chrono::seconds(5) < std::chrono::steady_clock::now()) {
+                    // std::cerr << "Client disconnected\n";
+                    // TODO: call handler disconnect
+                    break;
+                }
                 continue;
             }
             if (received > 0) {
-                serverPort = portFromIp(serverIP);
+                auto [IP, port] = portFromIp(serverIp);
 
                 Msg msg;
-                msg.IP = serverIP;
-                msg.Port = serverPort;
+                msg.IP = IP;
+                msg.Port = port;
                 msg.data = std::vector<char>(buffer.begin(), buffer.end());
 
-                std::lock_guard<std::mutex> lock(queueMutex);
-                messageQueue.push(msg);
+                m_client.lastPing = std::chrono::steady_clock::now();
+                handleMessage(msg);
             }
         }
     }).detach();

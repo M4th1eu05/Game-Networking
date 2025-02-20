@@ -55,8 +55,8 @@ struct MsgAck {
 
 struct Ping {
     uint8_t messageType;
-    uint8_t pingID;
     uint64_t clientID;
+    uint8_t pingID;
     std::chrono::steady_clock::time_point time;
 };
 
@@ -92,31 +92,59 @@ public:
 
 
 private:
-    int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
-    int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
-    [[nodiscard]] static std::unique_ptr<Falcon> ListenInternal(const std::string& endpoint, uint16_t port);
-
-
-    int portFromIp(std::string& ip);
-
-    std::queue<Msg> messageQueue;
-    std::mutex queueMutex;
-
-    std::mutex clientsMutex;
-    std::unordered_map<uint64_t, std::string> clients;
-
-    std::mutex lastPingsTimeMutex;
-    std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> lastPingsTime;
-
-    std::mutex pingedClientsMutex;
-    std::unordered_map<uint64_t, bool> pingedClients;
-
-    template<typename T>
-    bool processMessage(const Msg& msg, uint8_t expectedType, T& out);
 
     uint64_t nextClientID = 1; // ID unique attribué aux clients
     uint32_t nextStreamID = 1; // ID unique des Streams
     std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
 
     SocketType m_socket;
+
+    struct Client {
+        uint64_t ID;
+        std::string IP;
+        int Port;
+        std::chrono::time_point<std::chrono::steady_clock> lastPing;
+    };
+
+    std::unordered_map<uint64_t,Client> clients; // server reference to clients
+    Client m_client; // store client info from server
+
+    int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
+    int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
+    [[nodiscard]] static std::unique_ptr<Falcon> ListenInternal(const std::string& endpoint, uint16_t port);
+
+    std::pair<std::string, int> portFromIp(const std::string &ip);
+
+    template<typename T>
+    bool deserializeMessage(const Msg &msg, uint8_t expectedType, T& out) {
+        if (msg.data.size() >= sizeof(T)) {
+            T message;
+            std::memcpy(&message, msg.data.data(), sizeof(T));
+            if (message.messageType == expectedType) {
+                out = message;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template<typename T>
+    std::span<const char> serializeMessage(const T &message) {
+        std::vector<char> buffer(sizeof(T));
+        std::memcpy(buffer.data(), &message, sizeof(T));
+        return {buffer.data(), buffer.size()};
+    }
+
+    void handleConnectionMessage(const MsgConn &msg_conn, const std::string& msgIp, int msgPort);
+
+    void handleConnectionAckMessage(const MsgConnAck& msg_conn_ack);
+
+    void handleStandardMessage(const MsgStandard& msg_standard);
+
+    void handleAckMessage(const MsgAck & msg_ack);
+
+    void handlePingMessage(const Ping & ping);
+
+    void handleMessage(const Msg& msg);
+
 };
