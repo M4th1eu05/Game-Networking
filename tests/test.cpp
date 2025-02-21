@@ -18,6 +18,7 @@ TEST_CASE("Client can connect to server", "[falcon]") {
 
     const std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
     const auto client = std::make_unique<Falcon>();
+
     bool connectionSuccess = false;
     uint64_t clientID = 0;
 
@@ -26,13 +27,14 @@ TEST_CASE("Client can connect to server", "[falcon]") {
         spdlog::debug("Client connected with ID {}", id);
     });
 
-    REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
-
     client->OnConnectionEvent([&](bool success, uint64_t id) {
         spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
         connectionSuccess = success;
         clientID = id;
+
     });
+
+    REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
 
     // Wait for the event to trigger
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -41,7 +43,9 @@ TEST_CASE("Client can connect to server", "[falcon]") {
 
     REQUIRE(connectionSuccess == true);
     REQUIRE(clientID > 0);
+
 }
+
 //
 // TEST_CASE("Stream sends and receives data", "[Stream]") {
 //     Stream stream(1, false); // Stream non fiable

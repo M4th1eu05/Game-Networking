@@ -86,6 +86,11 @@ Falcon::Falcon()
 }
 
 Falcon::~Falcon() {
+    m_running = false;
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
+
     if(m_socket != INVALID_SOCKET)
     {
         closesocket(m_socket);
@@ -100,6 +105,13 @@ std::unique_ptr<Falcon> Falcon::ListenInternal(const std::string& endpoint, uint
     falcon->m_socket = socket(local_endpoint.sa_family, SOCK_DGRAM, IPPROTO_UDP);
     if (falcon->m_socket == INVALID_SOCKET) {
         std::cerr << "Socket creation failed with error: " << WSAGetLastError() << std::endl;
+        return nullptr;
+    }
+
+    u_long mode = 1;
+    if (ioctlsocket(falcon->m_socket, FIONBIO, &mode) != NO_ERROR) {
+        std::cerr << "Failed to set non-blocking mode with error: " << WSAGetLastError() << std::endl;
+        closesocket(falcon->m_socket);
         return nullptr;
     }
 
@@ -121,26 +133,37 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
         throw std::runtime_error("Socket creation failed");
     }
 
+    u_long mode = 1;
+    if (ioctlsocket(m_socket, FIONBIO, &mode) != NO_ERROR) {
+        std::cerr << "Failed to set non-blocking mode with error: " << WSAGetLastError() << std::endl;
+        closesocket(m_socket);
+        return;
+    }
+
     // Configure the server address
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
     inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
-    MsgConn conn{MSG_CONN};
 
-    int sent = SendToInternal(serverIp, port, serializeMessage(conn));
+    int sent = SendTo(serverIp, port, serializeMessage(MsgConn{MSG_CONN}));
 
     if (sent < 0) {
         std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;
     }
     else {
-        // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
+        std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
+        m_client.IP = serverIp;
+        m_client.Port = port;
+        m_client.lastPing = std::chrono::steady_clock::now();
     }
 
+
+
     // client thread to handle messages
-    std::thread([this]() {
-        while (true) {
+    m_thread = std::thread([this]() {
+        while (m_running) {
             std::string serverIp;
             std::vector<char> buffer(65535);
 
@@ -148,13 +171,6 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
 
             if (received < 0) {
                 // std::cerr << "Failed to receive message\n";
-                // check if m_client is set
-                if (m_client.lastPing + std::chrono::seconds(5) < std::chrono::steady_clock::now()) {
-                    // std::cerr << "Client disconnected\n";
-                    // TODO: call handler disconnect
-                    break;
-                }
-                continue;
             }
             if (received > 0) {
                 auto [IP, port] = portFromIp(serverIp);
@@ -167,8 +183,27 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
                 m_client.lastPing = std::chrono::steady_clock::now();
                 handleMessage(msg);
             }
+
+            std::chrono::steady_clock::duration delta_time = std::chrono::steady_clock::now() - m_client.lastPing;
+
+            // std::cout << "Last pinged " << std::chrono::duration_cast<std::chrono::seconds>(delta_time).count() << " seconds ago\n";
+
+            if (m_client.ID == 0 && delta_time > std::chrono::seconds(1)) {
+                std::cerr << "Failed to connect to server\n";
+                for (const auto& handler: onConnectionEventHandlers) {
+                    handler(false, 0);
+                }
+                break;
+            } else if (delta_time > std::chrono::seconds(2)) {
+                std::cerr << "Server disconnected\n";
+                for (const auto& handler: onDisconnectHandlers) {
+                    handler();
+                }
+                break;
+            }
+
         }
-    }).detach();
+    });
 }
 
 
@@ -198,7 +233,11 @@ int Falcon::ReceiveFromInternal(std::string &from, std::span<char, 65535> messag
     from = IpToString(reinterpret_cast<const sockaddr*>(&peer_addr));
 
     if (read_bytes < 0) {
-        std::cerr << "Failed to receive data. Error: " << WSAGetLastError() << std::endl;
+        int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK) {
+            return 0;
+        }
+        std::cerr << "Failed to receive data. Error: " << error << std::endl;
     }
 
     return read_bytes;

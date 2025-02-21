@@ -2,13 +2,15 @@
 
 #include <functional>
 #include <memory>
-#include <queue>
-#include <mutex>
 #include <string>
 #include <span>
 #include <unordered_map>
 #include "stream.h"
 #include <chrono>
+#include <vector>
+#include <cstring>
+#include <atomic>
+#include <thread>
 
 #ifdef WIN32
     using SocketType = unsigned int;
@@ -79,9 +81,9 @@ public:
     int ReceiveFrom(std::string& from, std::span<char, 65535> message);
 
     void OnClientConnected(const std::function<void(uint64_t)>& handler);
-    void OnConnectionEvent(std::function<void(bool, uint64_t)> handler);
-    void OnClientDisconnected(std::function<void(uint64_t)> handler);
-    void OnDisconnect(std::function<void()> handler);
+    void OnConnectionEvent(const std::function<void(bool, uint64_t)> &handler);
+    void OnClientDisconnected(const std::function<void(uint64_t)>& handler);
+    void OnDisconnect(const std::function<void()>& handler);
 
     // Gestion des Streams
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
@@ -99,15 +101,26 @@ private:
 
     SocketType m_socket;
 
+    std::thread m_thread;
+    std::atomic<bool> m_running = true;
+
+    std::pmr::vector<std::function<void(uint64_t)>> onClientConnectedHandlers;
+    std::pmr::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
+    std::pmr::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
+    std::pmr::vector<std::function<void()>> onDisconnectHandlers;
+
     struct Client {
         uint64_t ID;
         std::string IP;
         int Port;
+        bool pinged;
         std::chrono::time_point<std::chrono::steady_clock> lastPing;
     };
 
     std::unordered_map<uint64_t,Client> clients; // server reference to clients
     Client m_client; // store client info from server
+
+
 
     int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
     int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
@@ -129,10 +142,10 @@ private:
     }
 
     template<typename T>
-    std::span<const char> serializeMessage(const T &message) {
+    std::vector<char> serializeMessage(const T &message) {
         std::vector<char> buffer(sizeof(T));
         std::memcpy(buffer.data(), &message, sizeof(T));
-        return {buffer.data(), buffer.size()};
+        return buffer;
     }
 
     void handleConnectionMessage(const MsgConn &msg_conn, const std::string& msgIp, int msgPort);
