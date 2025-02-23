@@ -5,6 +5,7 @@
 #include <mutex>
 #include <chrono>
 
+
 std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
     int colonPos = ip.rfind(':');
     if (colonPos != std::string::npos && ip.find(']') == std::string::npos) {
@@ -26,27 +27,22 @@ std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
 
 
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
-    uint32_t streamID = nextStreamID++;
-    // spdlog::debug("Creating Stream {} for client {}", streamID, client);
-
-    auto stream = std::make_unique<Stream>(streamID, reliable);
-    streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(reliable, client);
+    streams.push_back(std::move(stream));
+    return stream;
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
-    uint32_t streamID = nextStreamID++;
-
-    // spdlog::debug("Creating Stream {}", streamID);
-
-    auto stream = std::make_unique<Stream>(streamID, reliable);
-    streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(reliable);
+    streams.push_back(std::move(stream));
+    return std::make_unique<Stream>(reliable);
 }
 
 void Falcon::CloseStream(const Stream& stream) {
     // spdlog::debug("Closing Stream {}", stream.GetStreamID());
-    streams.erase(stream.GetStreamID());
+    std::erase_if(streams, [&](const auto& s) {
+        return s->GetStreamID() == stream.GetStreamID();
+    });
 }
 
 int Falcon::SendTo(const std::string &to, uint16_t port, const std::span<const char> message)
@@ -59,7 +55,7 @@ int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
     return ReceiveFromInternal(from, message);
 }
 
-
+/*
 void Falcon::SendData(uint32_t streamID, std::span<const char> data) {
     if (streams.find(streamID) != streams.end()) {
         streams[streamID]->SendData(data);
@@ -75,6 +71,7 @@ void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<cons
         std::cerr << "Error: Stream " << streamID << " does not exist!\n";
     }
 }
+*/
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16_t port)
 {
@@ -193,8 +190,8 @@ void Falcon::handleConnectionMessage(const MsgConn &msg_conn, const std::string&
     }
 
     // add client to list
-    uint64_t clientID = nextClientID;
-    nextClientID++;
+    uint64_t clientID = nextClientID++;
+
     clients[clientID] = {clientID, msgIp, msgPort,false, std::chrono::steady_clock::now()};
 
     // send clientID to client

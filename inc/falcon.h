@@ -62,7 +62,10 @@ struct Ping {
     std::chrono::steady_clock::time_point time;
 };
 
-class Stream;
+
+constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
+constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+
 
 class Falcon {
 public:
@@ -86,28 +89,25 @@ public:
     void OnDisconnect(const std::function<void()>& handler);
 
     // Gestion des Streams
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable);
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable); // Server API
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable); // Client API
     void CloseStream(const Stream& stream);
-    void SendData(uint32_t streamID, std::span<const char> data);
-    void OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler);
 
 
 private:
 
     uint64_t nextClientID = 1; // ID unique attribué aux clients
-    uint32_t nextStreamID = 1; // ID unique des Streams
-    std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
+    std::vector<std::unique_ptr<Stream>> streams; // Liste des Stream
 
     SocketType m_socket;
 
     std::thread m_thread;
     std::atomic<bool> m_running = true;
 
-    std::pmr::vector<std::function<void(uint64_t)>> onClientConnectedHandlers;
-    std::pmr::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
-    std::pmr::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
-    std::pmr::vector<std::function<void()>> onDisconnectHandlers;
+    std::vector<std::function<void(uint64_t)>> onClientConnectedHandlers;
+    std::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
+    std::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
+    std::vector<std::function<void()>> onDisconnectHandlers;
 
     struct Client {
         uint64_t ID;
