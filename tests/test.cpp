@@ -96,7 +96,6 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
     const std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
     const auto client = std::make_unique<Falcon>();
 
-    bool connectionSuccess = false;
     uint64_t clientID = 0;
 
 
@@ -106,7 +105,6 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
 
     client->OnConnectionEvent([&](bool success, uint64_t id) {
         spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
-        connectionSuccess = success;
         clientID = id;
     });
 
@@ -115,8 +113,19 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
     // Wait for the event to trigger
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
+    bool hasReceivedData = false;
+
     auto clientStream = client->CreateStream(false);
+    auto serverStream = server->CreateStream(clientID, clientStream->GetStreamID());
+    serverStream->OnDataReceived([&](std::span<const char> data) {
+        spdlog::debug("Received data: {}", std::string(data.begin(), data.end()));
+        hasReceivedData = true;
+    });
     clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, client->GetClientInfoFromServer().ID, clientStream->GetStreamID(),  "Hello, World!"}));
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    REQUIRE(hasReceivedData == true);
 }
 
 // TEST_CASE("Reliable Stream retransmits lost packets", "[Stream]") {

@@ -1,8 +1,7 @@
 ﻿#include "stream.h"
 #include <iostream>
-#include <cstring>
-#include <thread>
-#include <chrono>
+
+uint32_t Stream::nextStreamID = 0;
 
 Stream::Stream(Falcon& falcon, bool reliable) : falcon(falcon) {
     streamID = ++nextStreamID;
@@ -31,7 +30,8 @@ Stream::Stream(Falcon &falcon, uint32_t StreamID, uint64_t clientID) : falcon(fa
 
 Stream::~Stream() {}
 
-void Stream::SendData(std::span<const char> data) {
+void Stream::SendData(std::span<const char> data)
+{
     Client target;
     if (IsServerStream(streamID)) {
         target = falcon.GetClient(clientID);
@@ -43,8 +43,19 @@ void Stream::SendData(std::span<const char> data) {
     falcon.SendTo(target.IP, target.Port, data);
 }
 
-void Stream::OnDataReceived(std::span<const char> data) {
+void Stream::OnDataReceived(std::span<const char> data)
+{
     std::cout << "Received data\n";
+
+    for (const auto& handler : onDataReceivedHandlers)
+    {
+        handler(data);
+    }
+}
+
+void Stream::OnDataReceived(const std::function<void(std::span<const char>)>& handler)
+{
+    onDataReceivedHandlers.push_back(handler);
 }
 
 /*

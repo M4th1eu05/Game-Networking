@@ -70,6 +70,7 @@ struct Client {
     std::chrono::time_point<std::chrono::steady_clock> lastPing;
 };
 
+class Stream;
 
 class Falcon {
 public:
@@ -95,6 +96,8 @@ public:
     // Gestion des Streams
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable); // Server API
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable); // Client API
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, uint32_t streamID); // Server API
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint32_t streamID); // Client API
     void CloseStream(const Stream& stream);
 
     Client GetClient(const uint64_t id) {

@@ -27,13 +27,27 @@ std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
 
 
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
-    auto stream = std::make_unique<Stream>(this, reliable, client);
+    auto stream = std::make_unique<Stream>(*this, reliable, client);
     streams.push_back(std::move(stream));
     return stream;
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
-    auto stream = std::make_unique<Stream>(this,reliable);
+    auto stream = std::make_unique<Stream>(*this,reliable);
+    streams.push_back(std::move(stream));
+    return stream;
+}
+
+std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, uint32_t streamID)
+{
+    auto stream = std::make_unique<Stream>(*this, streamID, client);
+    streams.push_back(std::move(stream));
+    return stream;
+}
+
+std::unique_ptr<Stream> Falcon::CreateStream(uint32_t streamID)
+{
+    auto stream = std::make_unique<Stream>(*this, streamID);
     streams.push_back(std::move(stream));
     return stream;
 }
@@ -54,24 +68,6 @@ int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
 {
     return ReceiveFromInternal(from, message);
 }
-
-/*
-void Falcon::SendData(uint32_t streamID, std::span<const char> data) {
-    if (streams.find(streamID) != streams.end()) {
-        streams[streamID]->SendData(data);
-    } else {
-        std::cerr << "Error: Stream " << streamID << " does not exist!\n";
-    }
-}
-
-void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler) {
-    if (streams.find(streamID) != streams.end()) {
-        streams[streamID]->OnDataReceived(handler);
-    } else {
-        std::cerr << "Error: Stream " << streamID << " does not exist!\n";
-    }
-}
-*/
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16_t port)
 {
@@ -228,13 +224,17 @@ void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
         (*stream)->OnDataReceived(SerializeMessage(msg_standard));
     }
     else {
-        std::cerr << "Error: Stream " << msg_standard.streamID << " does not exist!\n";
-        if (Stream::IsServerStream(msg_standard.streamID)) { //client
-            CreateStream(msg_standard.clientID, Stream::IsReliable(msg_standard.streamID));
+        std::cout << "Warning: Stream " << msg_standard.streamID << " does not exist, creating it on local!\n";
+        std::unique_ptr<Stream> newStream;
+        if (Stream::IsServerStream(msg_standard.streamID))
+        { //client
+            newStream = CreateStream(msg_standard.clientID, msg_standard.streamID);
         }
-        else { //server
-
+        else
+        { //server
+            newStream = CreateStream(msg_standard.streamID);
         }
+        newStream->OnDataReceived(SerializeMessage(msg_standard));
     }
 }
 
