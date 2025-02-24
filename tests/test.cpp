@@ -31,7 +31,6 @@ TEST_CASE("Client can connect to server", "[falcon]") {
         spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
         connectionSuccess = success;
         clientID = id;
-
     });
 
     REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
@@ -90,24 +89,36 @@ TEST_CASE("Does timeout work", "[falcon]") {
     REQUIRE(clientDisconnected == true);
 }
 
-//
-// TEST_CASE("Stream sends and receives data", "[Stream]") {
-//     Stream stream(1, false); // Stream non fiable
-//
-//     std::string message = "Hello, world!";
-//     std::span<const char> data(message.data(), message.size());
-//
-//     bool received = false;
-//     stream.OnDataReceived([&](std::span<const char> receivedData) {
-//         REQUIRE(std::string(receivedData.begin(), receivedData.end()) == message);
-//         received = true;
-//     });
-//
-//     stream.SendData(data);
-//
-//     REQUIRE(received == true);
-// }
-//
+
+TEST_CASE("Stream sends and receives data", "[Stream]") {
+    spdlog::set_level(spdlog::level::debug);
+
+    const std::unique_ptr<Falcon> server = Falcon::Listen("127.0.0.1",5555);
+    const auto client = std::make_unique<Falcon>();
+
+    bool connectionSuccess = false;
+    uint64_t clientID = 0;
+
+
+    server->OnClientConnected([&](uint64_t id) {
+        spdlog::debug("Client connected with ID {}", id);
+    });
+
+    client->OnConnectionEvent([&](bool success, uint64_t id) {
+        spdlog::debug("Connection event called on client! Success: {}, ID: {}", success, id);
+        connectionSuccess = success;
+        clientID = id;
+    });
+
+    REQUIRE_NOTHROW(client->ConnectTo("127.0.0.1", 5555));
+
+    // Wait for the event to trigger
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto clientStream = client->CreateStream(false);
+    clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, client->GetClientInfoFromServer().ID, clientStream->GetStreamID(),  "Hello, World!"}));
+}
+
 // TEST_CASE("Reliable Stream retransmits lost packets", "[Stream]") {
 //     Stream stream(2, true);
 //

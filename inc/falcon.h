@@ -45,7 +45,7 @@ struct MsgStandard {
     uint8_t messageType;
     uint64_t clientID;
     uint32_t streamID;
-    uint32_t packetID;
+    char data[1024];
 };
 
 struct MsgAck {
@@ -62,9 +62,13 @@ struct Ping {
     std::chrono::steady_clock::time_point time;
 };
 
-
-constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
-constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+struct Client {
+    uint64_t ID;
+    std::string IP;
+    int Port;
+    bool pinged;
+    std::chrono::time_point<std::chrono::steady_clock> lastPing;
+};
 
 
 class Falcon {
@@ -93,6 +97,33 @@ public:
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable); // Client API
     void CloseStream(const Stream& stream);
 
+    Client GetClient(const uint64_t id) {
+        return clients[id];
+    }
+
+    Client GetClientInfoFromServer() {
+        return clientInfoFromServer;
+    }
+
+    template<typename T>
+    static bool DeserializeMessage(const Msg &msg, uint8_t expectedType, T& out) {
+        if (msg.data.size() >= sizeof(T)) {
+            T message;
+            std::memcpy(&message, msg.data.data(), sizeof(T));
+            if (message.messageType == expectedType) {
+                out = message;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template<typename T>
+    [[nodiscard]] static std::vector<char> SerializeMessage(const T &message) {
+        std::vector<char> buffer(sizeof(T));
+        std::memcpy(buffer.data(), &message, sizeof(T));
+        return buffer;
+    }
 
 private:
 
@@ -109,16 +140,8 @@ private:
     std::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
     std::vector<std::function<void()>> onDisconnectHandlers;
 
-    struct Client {
-        uint64_t ID;
-        std::string IP;
-        int Port;
-        bool pinged;
-        std::chrono::time_point<std::chrono::steady_clock> lastPing;
-    };
-
     std::unordered_map<uint64_t,Client> clients; // server reference to clients
-    Client m_client; // store client info from server
+    Client clientInfoFromServer; // store client info from server
 
 
 
@@ -128,25 +151,6 @@ private:
 
     std::pair<std::string, int> portFromIp(const std::string &ip);
 
-    template<typename T>
-    bool deserializeMessage(const Msg &msg, uint8_t expectedType, T& out) {
-        if (msg.data.size() >= sizeof(T)) {
-            T message;
-            std::memcpy(&message, msg.data.data(), sizeof(T));
-            if (message.messageType == expectedType) {
-                out = message;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    template<typename T>
-    std::vector<char> serializeMessage(const T &message) {
-        std::vector<char> buffer(sizeof(T));
-        std::memcpy(buffer.data(), &message, sizeof(T));
-        return buffer;
-    }
 
     void handleConnectionMessage(const MsgConn &msg_conn, const std::string& msgIp, int msgPort);
 

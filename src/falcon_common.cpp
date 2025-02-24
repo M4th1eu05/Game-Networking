@@ -27,7 +27,7 @@ std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
 
 
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
-    auto stream = std::make_unique<Stream>(reliable, client);
+    auto stream = std::make_unique<Stream>(this, reliable, client);
     streams.push_back(std::move(stream));
     return stream;
 }
@@ -115,7 +115,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16
 
                 if (delta_time > std::chrono::seconds(1) && !c.pinged) {
                     c.pinged = true;
-                    int sent = falcon->SendTo(c.IP, c.Port, falcon->serializeMessage(Ping{PING}));
+                    int sent = falcon->SendTo(c.IP, c.Port, falcon->SerializeMessage(Ping{PING}));
                     if (sent < 0) {
                         std::cerr << "Failed to ping client " << c.ID << "\n";
                     }
@@ -159,19 +159,19 @@ void Falcon::OnDisconnect(const std::function<void()>& handler) {
 
 
 void Falcon::handleMessage(const Msg &msg) {
-    if (MsgConn msg_conn; deserializeMessage(msg, MSG_CONN, msg_conn)) {
+    if (MsgConn msg_conn; DeserializeMessage(msg, MSG_CONN, msg_conn)) {
         handleConnectionMessage(msg_conn, msg.IP, msg.Port);
     }
-    else if (MsgConnAck msg_conn_ack; deserializeMessage(msg, MSG_CONN_ACK, msg_conn_ack)) {
+    else if (MsgConnAck msg_conn_ack; DeserializeMessage(msg, MSG_CONN_ACK, msg_conn_ack)) {
         handleConnectionAckMessage(msg_conn_ack);
     }
-    else if (MsgStandard msg_standard; deserializeMessage(msg, MSG_STANDARD, msg_standard)) {
+    else if (MsgStandard msg_standard; DeserializeMessage(msg, MSG_STANDARD, msg_standard)) {
         handleStandardMessage(msg_standard);
     }
-    else if (MsgAck msg_ack; deserializeMessage(msg, MSG_ACK, msg_ack)) {
+    else if (MsgAck msg_ack; DeserializeMessage(msg, MSG_ACK, msg_ack)) {
         handleAckMessage(msg_ack);
     }
-    else if (Ping ping; deserializeMessage(msg, PING, ping)) {
+    else if (Ping ping; DeserializeMessage(msg, PING, ping)) {
         handlePingMessage(ping);
     }
     else {
@@ -197,7 +197,7 @@ void Falcon::handleConnectionMessage(const MsgConn &msg_conn, const std::string&
     // send clientID to client
     const MsgConnAck msgConnAck = {MSG_CONN_ACK, clientID};
 
-    int sent = SendTo(msgIp, msgPort, serializeMessage(msgConnAck));
+    int sent = SendTo(msgIp, msgPort, SerializeMessage(msgConnAck));
 
     if (sent < 0) {
         std::cerr << "Failed to send connection ack to " << msgIp << ":" << msgPort << "\n";
@@ -210,15 +210,26 @@ void Falcon::handleConnectionMessage(const MsgConn &msg_conn, const std::string&
 }
 
 void Falcon::handleConnectionAckMessage(const MsgConnAck &msg_conn_ack) {
-    m_client.ID = msg_conn_ack.clientID;
+    clientInfoFromServer.ID = msg_conn_ack.clientID;
     for (const auto& handler: onConnectionEventHandlers) {
         handler(true, msg_conn_ack.clientID);
     }
 }
 
 void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
-    std::cout << "From " << msg_standard.clientID << " On Stream " << msg_standard.streamID << " Packet " << msg_standard.packetID << "\n";
-    // TODO: add content to message
+    std::cout << "From " << msg_standard.clientID << " On Stream " << msg_standard.streamID << "\n";
+    // get the stream
+    auto stream = std::find_if(streams.begin(), streams.end(), [&](const auto& s) {
+        return s->GetStreamID() == msg_standard.streamID;
+    });
+
+    if (stream != streams.end()) {
+
+        (*stream)->OnDataReceived(SerializeMessage(msg_standard));
+    }
+    else {
+        std::cerr << "Error: Stream " << msg_standard.streamID << " does not exist!\n";
+    }
 }
 
 void Falcon::handleAckMessage(const MsgAck &msg_ack) {
@@ -227,9 +238,9 @@ void Falcon::handleAckMessage(const MsgAck &msg_ack) {
 
 void Falcon::handlePingMessage(const Ping &ping) {
     std::cout << "Ping " << ping.pingID << "received\n";
-    if (m_client.ID != 0) { // check if we are client
+    if (clientInfoFromServer.ID != 0) { // check if we are client
         std::cout << "Ponging\n";
-        int sent = SendTo(m_client.IP, m_client.Port, serializeMessage(Ping{PING, m_client.ID, ping.pingID, ping.time}));
+        int sent = SendTo(clientInfoFromServer.IP, clientInfoFromServer.Port, SerializeMessage(Ping{PING, clientInfoFromServer.ID, ping.pingID, ping.time}));
         if (sent < 0) {
             std::cerr << "Failed to send pong\n";
         }

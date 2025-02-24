@@ -4,25 +4,39 @@
 #include <thread>
 #include <chrono>
 
-Stream::Stream(bool reliable)
-{
+Stream::Stream(Falcon& falcon, bool reliable) : falcon(falcon) {
     streamID = ++nextStreamID;
-    streamID |= SERVERSTREAMMASK; // set the most significant bit to 1 to indicate that this is a server stream
     if (reliable)
-        streamID |= RELIABLESTREAMMASK; // set the second most significant bit to 1 to indicate that this is a reliable stream
+        streamID |= RELIABLESTREAMMASK;
     else
-        streamID &= ~RELIABLESTREAMMASK; // set the second most significant bit to 0 to indicate that this is an unreliable stream
+        streamID &= ~RELIABLESTREAMMASK;
 }
+
+Stream::Stream(Falcon& falcon, bool reliable, uint64_t clientID) : falcon(falcon), clientID(clientID) {
+    streamID = ++nextStreamID;
+    if (reliable)
+        streamID |= RELIABLESTREAMMASK;
+    else
+        streamID &= ~RELIABLESTREAMMASK;
+}
+
 
 Stream::~Stream() {}
 
 void Stream::SendData(std::span<const char> data) {
+    Client target;
+    if (IsServerStream()) {
+        target = falcon.GetClient(clientID);
+    }
+    else {
+        target = falcon.GetClientInfoFromServer();
+    }
 
+    falcon.SendTo(target.IP, target.Port, data);
 }
 
 void Stream::OnDataReceived(std::span<const char> data) {
-    std::cout << "Stream " << streamID << " waiting for data...\n";
-    // Cette fonction sera déclenchée par le serveur lorsqu'il reçoit des données
+    std::cout << "Received data\n";
 }
 
 /*

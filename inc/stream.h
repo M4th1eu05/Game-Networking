@@ -9,10 +9,13 @@
 
 #include "falcon.h"
 
+constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
+constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+
 class Stream {
 public:
-    Stream(bool reliable);
-    Stream(bool reliable, uint64_t clientID);
+    Stream(Falcon& falcon, bool reliable); // Client API
+    Stream(Falcon& falcon, bool reliable, uint64_t clientID); // Server API
     ~Stream();
 
     void SendData(std::span<const char> data);
@@ -22,21 +25,21 @@ public:
     uint32_t GetStreamID() const { return streamID; }
     bool IsReliable() const {
         // check if bit at position 30 is set
-        return streamID & (1 << 30);
+        return streamID & RELIABLESTREAMMASK;
     }
 
     bool IsServerStream() const {
         // check if bit at position 31 is set
-        return streamID & (1 << 31);
+        return streamID & SERVERSTREAMMASK;
     }
 
 private:
-    uint32_t streamID; // Identifiant unique du Stream
+    uint32_t streamID;
+    static uint32_t nextStreamID;
 
-    static uint32_t nextStreamID; // ID unique des Streams
+    Falcon& falcon;
 
-    std::unique_ptr<Falcon> falcon; // Référence au socket Falcon
-
+    uint64_t clientID = 0;
 
     //uint32_t nextPacketID = 1;
     //std::unordered_map<uint32_t, Packet> pendingPackets; // Paquets en attente d’ACK
