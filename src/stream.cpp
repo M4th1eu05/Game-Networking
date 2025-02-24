@@ -20,12 +20,20 @@ Stream::Stream(Falcon& falcon, bool reliable, uint64_t clientID) : falcon(falcon
         streamID &= ~RELIABLESTREAMMASK;
 }
 
+Stream::Stream(Falcon &falcon, uint32_t StreamID) : falcon(falcon) {
+    streamID = StreamID;
+}
+
+Stream::Stream(Falcon &falcon, uint32_t StreamID, uint64_t clientID) : falcon(falcon), clientID(clientID){
+    streamID = StreamID;
+}
+
 
 Stream::~Stream() {}
 
 void Stream::SendData(std::span<const char> data) {
     Client target;
-    if (IsServerStream()) {
+    if (IsServerStream(streamID)) {
         target = falcon.GetClient(clientID);
     }
     else {

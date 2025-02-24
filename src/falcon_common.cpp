@@ -33,9 +33,9 @@ std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
-    auto stream = std::make_unique<Stream>(reliable);
+    auto stream = std::make_unique<Stream>(this,reliable);
     streams.push_back(std::move(stream));
-    return std::make_unique<Stream>(reliable);
+    return stream;
 }
 
 void Falcon::CloseStream(const Stream& stream) {
@@ -229,6 +229,12 @@ void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
     }
     else {
         std::cerr << "Error: Stream " << msg_standard.streamID << " does not exist!\n";
+        if (Stream::IsServerStream(msg_standard.streamID)) { //client
+            CreateStream(msg_standard.clientID, Stream::IsReliable(msg_standard.streamID));
+        }
+        else { //server
+
+        }
     }
 }
 

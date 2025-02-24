@@ -16,6 +16,8 @@ class Stream {
 public:
     Stream(Falcon& falcon, bool reliable); // Client API
     Stream(Falcon& falcon, bool reliable, uint64_t clientID); // Server API
+    Stream(Falcon& falcon, uint32_t StreamID); // Client API
+    Stream(Falcon& falcon, uint32_t StreamID, uint64_t clientID); // Server API
     ~Stream();
 
     void SendData(std::span<const char> data);
@@ -23,14 +25,14 @@ public:
     void Acknowledge(uint32_t packetID);
 
     uint32_t GetStreamID() const { return streamID; }
-    bool IsReliable() const {
+    static bool IsReliable(uint32_t ID) {
         // check if bit at position 30 is set
-        return streamID & RELIABLESTREAMMASK;
+        return ID & RELIABLESTREAMMASK;
     }
 
-    bool IsServerStream() const {
+    static bool IsServerStream(uint32_t ID) {
         // check if bit at position 31 is set
-        return streamID & SERVERSTREAMMASK;
+        return ID & SERVERSTREAMMASK;
     }
 
 private:
