@@ -52,7 +52,7 @@ struct MsgStandard {
     uint64_t clientID;
     uint32_t streamID;
     uint8_t messageID;
-    std::array<char, 1024> data;
+    char data[1024];
 };
 
 struct MsgAck {
