@@ -20,6 +20,7 @@
 
 static constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
 static constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+static constexpr uint64_t RELIABLE_ACK_MASK = uint64_t(1)<<63;
 
 #include "stream.h"
 
@@ -50,14 +51,16 @@ struct MsgStandard {
     uint8_t messageType;
     uint64_t clientID;
     uint32_t streamID;
-    char data[1024];
+    uint8_t messageID;
+    std::array<char, 1024> data;
 };
 
 struct MsgAck {
     uint8_t messageType;
     uint64_t clientID;
     uint32_t streamID;
-    uint32_t packetID;
+    uint8_t messageID;
+    uint64_t trace;
 };
 
 struct Ping {
@@ -132,11 +135,14 @@ public:
         return buffer;
     }
 
+
 private:
 
     uint64_t nextClientID = 1; // ID unique attribué aux clients
     uint32_t nextStreamID = 1; // ID unique attribué aux Stream
     std::vector<uint32_t> streams; // Liste des Stream
+    std::unordered_map<uint32_t, std::vector<MsgStandard>> reliableMessagesReceived;
+    std::unordered_map<uint32_t, std::vector<MsgStandard>> reliableMessagesSent;
 
     SocketType m_socket;
 
@@ -172,5 +178,7 @@ private:
     void handlePingMessage(const Ping & ping);
 
     void handleMessage(const Msg& msg);
+
+    uint64_t GetTrace(uint32_t streamID, uint8_t messageID);
 
 };

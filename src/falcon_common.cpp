@@ -60,7 +60,22 @@ void Falcon::CloseStream(const Stream& stream) {
 
 int Falcon::SendTo(const std::string &to, uint16_t port, const std::span<const char> message)
 {
-    return SendToInternal(to, port, message);
+    int sent = SendToInternal(to, port, message);
+    if (sent > 0) {
+        Msg msg;
+        msg.IP = to;
+        msg.Port = port;
+        msg.data = std::vector<char>(message.begin(), message.end());
+
+        if (MsgStandard msg_standard{}; DeserializeMessage(msg, MSG_STANDARD, msg_standard)) {
+            // add to the front of the queue
+            reliableMessagesSent[msg_standard.streamID].insert(reliableMessagesSent[msg_standard.streamID].begin(), msg_standard);
+            if (reliableMessagesSent[msg_standard.streamID].size() > 64) {
+                reliableMessagesSent[msg_standard.streamID].pop_back();
+            }
+        }
+    }
+    return sent;
 }
 
 int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
@@ -234,10 +249,43 @@ void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
     }
     Stream::OnDataReceived(msg_standard.data);
 
+    if (Stream::IsReliable(msg_standard.streamID)) {
+        reliableMessagesReceived[msg_standard.streamID].insert(reliableMessagesReceived[msg_standard.streamID].begin(), msg_standard);
+        if (reliableMessagesReceived[msg_standard.streamID].size() > 64) {
+            reliableMessagesReceived[msg_standard.streamID].pop_back();
+        }
+
+        uint64_t trace = GetTrace(msg_standard.streamID, msg_standard.messageID);
+
+        // send ack
+        const MsgAck msgAck = {MSG_ACK, msg_standard.clientID, msg_standard.streamID, msg_standard.messageID, trace};
+        int sent = SendTo(clients[msg_standard.clientID].IP, clients[msg_standard.clientID].Port, SerializeMessage(msgAck));
+        if (sent < 0) {
+            std::cerr << "Failed to send ack\n";
+        }
+    }
+
 }
 
 void Falcon::handleAckMessage(const MsgAck &msg_ack) {
-    // TODO: handle ack
+    std::cout << "Ack received from " << msg_ack.clientID << " on stream " << msg_ack.streamID << "\n";
+    for (auto& m : reliableMessagesSent[msg_ack.streamID]) {
+        int delta = msg_ack.messageID - m.messageID;
+
+        if (msg_ack.trace & (RELIABLE_ACK_MASK >> delta)) {
+            reliableMessagesSent[msg_ack.streamID].erase(std::remove_if(reliableMessagesSent[msg_ack.streamID].begin(), reliableMessagesSent[msg_ack.streamID].end(), [&](const auto& msg) {
+                return msg.messageID == m.messageID;
+            }), reliableMessagesSent[msg_ack.streamID].end());
+        }
+    }
+
+    // resend lost packets
+    for (const auto& m : reliableMessagesSent[msg_ack.streamID]) {
+        int sent = SendTo(clients[msg_ack.clientID].IP, clients[msg_ack.clientID].Port, SerializeMessage(m));
+        if (sent < 0) {
+            std::cerr << "Failed to resend lost packet\n";
+        }
+    }
 }
 
 void Falcon::handlePingMessage(const Ping &ping) {
@@ -251,3 +299,13 @@ void Falcon::handlePingMessage(const Ping &ping) {
     }
 }
 
+uint64_t Falcon::GetTrace(uint32_t streamID, uint8_t messageID) {
+    uint64_t trace = 0;
+    for (const MsgStandard& m : reliableMessagesReceived[streamID]) {
+        int delta = messageID - m.messageID;
+        if (delta >= 0 && delta < 64) {
+            trace |= RELIABLE_ACK_MASK >> delta;
+        }
+    }
+    return trace;
+}

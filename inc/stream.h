@@ -22,12 +22,10 @@ public:
     void SendData(std::span<const char> data);
     static void OnDataReceived(std::span<const char> data); // Called when data is received by the Falcon object, Really want to rename this HandleDataReceived but the tech plan says otherwise
 
-    // uint32_t GetStreamID() const { return streamID; }
     static bool IsReliable(uint32_t ID) {
         // check if bit at position 30 is set
         return ID & RELIABLESTREAMMASK;
     }
-    //
     static bool IsServerStream(uint32_t ID) {
         // check if bit at position 31 is set
         return ID & SERVERSTREAMMASK;

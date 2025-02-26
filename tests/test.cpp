@@ -122,7 +122,7 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
         hasReceivedData = true;
     });
 
-    clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, 0, 0, "Hello, World!"}));
+    clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, 0, 0,0, "Hello, World!"}));
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -130,20 +130,3 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
 
     REQUIRE(hasReceivedData == true);
 }
-
-// TEST_CASE("Reliable Stream retransmits lost packets", "[Stream]") {
-//     Stream stream(2, true);
-//
-//     std::string message = "Important data!";
-//     std::span<const char> data(message.data(), message.size());
-//
-//     stream.SendData(data);
-//
-//     // Simule la perte de paquets
-//     stream.Acknowledge(1); // On ne confirme que le premier envoi
-//
-//     // Attendre pour voir si le paquet est renvoyé
-//     std::this_thread::sleep_for(std::chrono::seconds(2));
-//
-//     REQUIRE(true); // Si on arrive ici, c'est que le test est passé
-// }
