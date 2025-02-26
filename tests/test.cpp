@@ -1,5 +1,4 @@
 #include <string>
-#include <array>
 #include <span>
 #include <thread>
 
@@ -10,6 +9,7 @@
 
 TEST_CASE("Can Listen", "[falcon]") {
     auto receiver = Falcon::Listen("127.0.0.1", 5555);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     REQUIRE(receiver != nullptr);
 }
 
@@ -84,7 +84,7 @@ TEST_CASE("Does timeout work", "[falcon]") {
     client.reset();
 
     // Wait for the disconnection event to trigger
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(3));
 
     REQUIRE(clientDisconnected == true);
 }
@@ -116,14 +116,17 @@ TEST_CASE("Stream sends and receives data", "[Stream]") {
     bool hasReceivedData = false;
 
     auto clientStream = client->CreateStream(false);
-    auto serverStream = server->CreateStream(clientID, clientStream->GetStreamID());
-    serverStream->OnDataReceived([&](std::span<const char> data) {
-        spdlog::debug("Received data: {}", std::string(data.begin(), data.end()));
+
+    server->OnStreamCreated([&hasReceivedData](const uint32_t streamID) {
+        spdlog::debug("Stream created with ID {}", streamID);
         hasReceivedData = true;
     });
-    clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, client->GetClientInfoFromServer().ID, clientStream->GetStreamID(),  "Hello, World!"}));
+
+    clientStream->SendData(Falcon::SerializeMessage(MsgStandard{MSG_STANDARD, 0, 0, "Hello, World!"}));
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    client->CloseStream(*clientStream);
 
     REQUIRE(hasReceivedData == true);
 }

@@ -25,38 +25,37 @@ std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
     return {"", -1};
 }
 
-
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
-    auto stream = std::make_unique<Stream>(*this, reliable, client);
-    streams.push_back(std::move(stream));
+    uint32_t streamID = nextStreamID++;
+    streamID |= SERVERSTREAMMASK;
+    if (reliable)
+        streamID |= RELIABLESTREAMMASK;
+    else
+        streamID &= ~RELIABLESTREAMMASK;
+
+    auto stream = std::make_unique<Stream>(streamID, clients[client].IP, clients[client].Port, *this);
+    streams.push_back(stream->streamID);
     return stream;
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
-    auto stream = std::make_unique<Stream>(*this,reliable);
-    streams.push_back(std::move(stream));
-    return stream;
-}
+    uint32_t streamID = nextStreamID++;
+    streamID &= ~SERVERSTREAMMASK;
+    if (reliable)
+        streamID |= RELIABLESTREAMMASK;
+    else
+        streamID &= ~RELIABLESTREAMMASK;
 
-std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, uint32_t streamID)
-{
-    auto stream = std::make_unique<Stream>(*this, streamID, client);
-    streams.push_back(std::move(stream));
-    return stream;
-}
-
-std::unique_ptr<Stream> Falcon::CreateStream(uint32_t streamID)
-{
-    auto stream = std::make_unique<Stream>(*this, streamID);
-    streams.push_back(std::move(stream));
+    auto stream = std::make_unique<Stream>(streamID, clientInfoFromServer.IP, clientInfoFromServer.Port, *this);
+    streams.push_back(stream->streamID);
     return stream;
 }
 
 void Falcon::CloseStream(const Stream& stream) {
     // spdlog::debug("Closing Stream {}", stream.GetStreamID());
-    std::erase_if(streams, [&](const auto& s) {
-        return s->GetStreamID() == stream.GetStreamID();
-    });
+    streams.erase(std::remove_if(streams.begin(), streams.end(), [&](const auto& id) {
+        return id == stream.streamID;
+    }), streams.end());
 }
 
 int Falcon::SendTo(const std::string &to, uint16_t port, const std::span<const char> message)
@@ -111,7 +110,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16
 
                 if (delta_time > std::chrono::seconds(1) && !c.pinged) {
                     c.pinged = true;
-                    int sent = falcon->SendTo(c.IP, c.Port, falcon->SerializeMessage(Ping{PING}));
+                    int sent = falcon->SendTo(c.IP, c.Port, Falcon::SerializeMessage(Ping{PING}));
                     if (sent < 0) {
                         std::cerr << "Failed to ping client " << c.ID << "\n";
                     }
@@ -152,6 +151,9 @@ void Falcon::OnDisconnect(const std::function<void()>& handler) {
     onDisconnectHandlers.push_back(handler);
 }
 
+void Falcon::OnStreamCreated(const std::function<void(uint32_t)> &handler) {
+    onStreamCreatedHandlers.push_back(handler);
+}
 
 
 void Falcon::handleMessage(const Msg &msg) {
@@ -215,27 +217,23 @@ void Falcon::handleConnectionAckMessage(const MsgConnAck &msg_conn_ack) {
 void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
     std::cout << "From " << msg_standard.clientID << " On Stream " << msg_standard.streamID << "\n";
     // get the stream
-    auto stream = std::find_if(streams.begin(), streams.end(), [&](const auto& s) {
-        return s->GetStreamID() == msg_standard.streamID;
+    auto stream = std::find_if(streams.begin(), streams.end(), [&](const auto& id) {
+        return id == msg_standard.streamID;
     });
 
-    if (stream != streams.end()) {
-
-        (*stream)->OnDataReceived(SerializeMessage(msg_standard));
-    }
-    else {
+    if (stream == streams.end()) {
         std::cout << "Warning: Stream " << msg_standard.streamID << " does not exist, creating it on local!\n";
-        std::unique_ptr<Stream> newStream;
-        if (Stream::IsServerStream(msg_standard.streamID))
-        { //client
-            newStream = CreateStream(msg_standard.clientID, msg_standard.streamID);
+        std::string ip = clients[msg_standard.clientID].IP;
+        int port = clients[msg_standard.clientID].Port;
+        auto newStream = std::make_unique<Stream>(msg_standard.streamID, ip, port, *this);
+        streams.push_back(newStream->streamID);
+
+        for (const auto& handler: onStreamCreatedHandlers) {
+            handler(newStream->streamID);
         }
-        else
-        { //server
-            newStream = CreateStream(msg_standard.streamID);
-        }
-        newStream->OnDataReceived(SerializeMessage(msg_standard));
     }
+    Stream::OnDataReceived(msg_standard.data);
+
 }
 
 void Falcon::handleAckMessage(const MsgAck &msg_ack) {

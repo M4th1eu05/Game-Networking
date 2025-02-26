@@ -5,18 +5,23 @@
 #include <string>
 #include <span>
 #include <unordered_map>
-#include "stream.h"
 #include <chrono>
 #include <vector>
 #include <cstring>
 #include <atomic>
 #include <thread>
+#include <cstdint>
 
 #ifdef WIN32
     using SocketType = unsigned int;
 #else
     using SocketType = int;
 #endif
+
+static constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
+static constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+
+#include "stream.h"
 
 enum MsgType: uint8_t {
     MSG_CONN,
@@ -82,7 +87,6 @@ public:
     Falcon& operator=(Falcon&&) = default;
 
     [[nodiscard]] static std::unique_ptr<Falcon> Listen(const std::string& endpoint, uint16_t port);
-    [[nodiscard]] static std::unique_ptr<Falcon> Listen(uint16_t port);
     void ConnectTo(const std::string& serverIp, uint16_t port);
 
     int SendTo(const std::string& to, uint16_t port, std::span<const char> message);
@@ -92,13 +96,13 @@ public:
     void OnConnectionEvent(const std::function<void(bool, uint64_t)> &handler);
     void OnClientDisconnected(const std::function<void(uint64_t)>& handler);
     void OnDisconnect(const std::function<void()>& handler);
+    void OnStreamCreated(const std::function<void(uint32_t)> &handler);
 
     // Gestion des Streams
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable); // Server API
     [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable); // Client API
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, uint32_t streamID); // Server API
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint32_t streamID); // Client API
     void CloseStream(const Stream& stream);
+
 
     Client GetClient(const uint64_t id) {
         return clients[id];
@@ -131,7 +135,8 @@ public:
 private:
 
     uint64_t nextClientID = 1; // ID unique attribué aux clients
-    std::vector<std::unique_ptr<Stream>> streams; // Liste des Stream
+    uint32_t nextStreamID = 1; // ID unique attribué aux Stream
+    std::vector<uint32_t> streams; // Liste des Stream
 
     SocketType m_socket;
 
@@ -142,6 +147,7 @@ private:
     std::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
     std::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
     std::vector<std::function<void()>> onDisconnectHandlers;
+    std::vector<std::function<void(uint32_t)>> onStreamCreatedHandlers;
 
     std::unordered_map<uint64_t,Client> clients; // server reference to clients
     Client clientInfoFromServer; // store client info from server

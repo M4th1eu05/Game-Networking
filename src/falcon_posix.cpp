@@ -68,6 +68,10 @@ Falcon::Falcon() {
 }
 
 Falcon::~Falcon() {
+    m_running = false;
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
     if(m_socket > 0)
     {
         close(m_socket);
@@ -129,16 +133,17 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
     serverAddr.sin_port = htons(port);
     inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
 
-    int sent = SendToInternal(serverIp, port, serializeMessage(MsgConn{MSG_CONN}));
+    int sent = SendToInternal(serverIp, port, SerializeMessage(MsgConn{MSG_CONN}));
 
     if (sent < 0) {
         std::cout << "Failed to send connection request to " << serverIp << ":" << port << std::endl;
     }
     else {
         // std::cout << "Connection request sent to " << serverIp << ":" << port << std::endl;
-        m_client.IP = serverIp;
-        m_client.Port = port;
-        m_client.lastPing = std::chrono::steady_clock::now();
+
+        clientInfoFromServer.IP = serverIp;
+        clientInfoFromServer.Port = port;
+        clientInfoFromServer.lastPing = std::chrono::steady_clock::now();
     }
 
     // client thread to handle messages
@@ -160,12 +165,12 @@ void Falcon::ConnectTo(const std::string& serverIp, uint16_t port)
                 msg.Port = port;
                 msg.data = std::vector<char>(buffer.begin(), buffer.end());
 
-                m_client.lastPing = std::chrono::steady_clock::now();
+                clientInfoFromServer.lastPing = std::chrono::steady_clock::now();
                 handleMessage(msg);
             }
 
-            if (m_client.lastPing + std::chrono::seconds(1) < std::chrono::steady_clock::now()) {
-                if (m_client.ID == 0) {
+            if (clientInfoFromServer.lastPing + std::chrono::seconds(1) < std::chrono::steady_clock::now()) {
+                if (clientInfoFromServer.ID == 0) {
                     std::cerr << "Failed to connect to server\n";
                     for (const auto& handler: onConnectionEventHandlers) {
                         handler(false, 0);
