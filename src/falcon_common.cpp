@@ -5,6 +5,7 @@
 #include <mutex>
 #include <chrono>
 
+
 std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
     int colonPos = ip.rfind(':');
     if (colonPos != std::string::npos && ip.find(']') == std::string::npos) {
@@ -24,56 +25,62 @@ std::pair<std::string, int> Falcon::portFromIp(const std::string& ip) {
     return {"", -1};
 }
 
-
 std::unique_ptr<Stream> Falcon::CreateStream(uint64_t client, bool reliable) {
     uint32_t streamID = nextStreamID++;
-    // spdlog::debug("Creating Stream {} for client {}", streamID, client);
+    streamID |= SERVERSTREAMMASK;
+    if (reliable)
+        streamID |= RELIABLESTREAMMASK;
+    else
+        streamID &= ~RELIABLESTREAMMASK;
 
-    auto stream = std::make_unique<Stream>(streamID, reliable);
-    streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(streamID, clients[client].IP, clients[client].Port, *this);
+    streams.push_back(stream->streamID);
+    return stream;
 }
 
 std::unique_ptr<Stream> Falcon::CreateStream(bool reliable) {
     uint32_t streamID = nextStreamID++;
+    streamID &= ~SERVERSTREAMMASK;
+    if (reliable)
+        streamID |= RELIABLESTREAMMASK;
+    else
+        streamID &= ~RELIABLESTREAMMASK;
 
-    // spdlog::debug("Creating Stream {}", streamID);
-
-    auto stream = std::make_unique<Stream>(streamID, reliable);
-    streams[streamID] = std::move(stream);
-    return std::make_unique<Stream>(streamID, reliable);
+    auto stream = std::make_unique<Stream>(streamID, clientInfoFromServer.IP, clientInfoFromServer.Port, *this);
+    streams.push_back(stream->streamID);
+    return stream;
 }
 
 void Falcon::CloseStream(const Stream& stream) {
     // spdlog::debug("Closing Stream {}", stream.GetStreamID());
-    streams.erase(stream.GetStreamID());
+    streams.erase(std::remove_if(streams.begin(), streams.end(), [&](const auto& id) {
+        return id == stream.streamID;
+    }), streams.end());
 }
 
 int Falcon::SendTo(const std::string &to, uint16_t port, const std::span<const char> message)
 {
-    return SendToInternal(to, port, message);
+    int sent = SendToInternal(to, port, message);
+    if (sent > 0) {
+        Msg msg;
+        msg.IP = to;
+        msg.Port = port;
+        msg.data = std::vector<char>(message.begin(), message.end());
+
+        if (MsgStandard msg_standard{}; DeserializeMessage(msg, MSG_STANDARD, msg_standard)) {
+            // add to the front of the queue
+            reliableMessagesSent[msg_standard.streamID].insert(reliableMessagesSent[msg_standard.streamID].begin(), msg_standard);
+            if (reliableMessagesSent[msg_standard.streamID].size() > 64) {
+                reliableMessagesSent[msg_standard.streamID].pop_back();
+            }
+        }
+    }
+    return sent;
 }
 
 int Falcon::ReceiveFrom(std::string& from, const std::span<char, 65535> message)
 {
     return ReceiveFromInternal(from, message);
-}
-
-
-void Falcon::SendData(uint32_t streamID, std::span<const char> data) {
-    if (streams.find(streamID) != streams.end()) {
-        streams[streamID]->SendData(data);
-    } else {
-        std::cerr << "Error: Stream " << streamID << " does not exist!\n";
-    }
-}
-
-void Falcon::OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler) {
-    if (streams.find(streamID) != streams.end()) {
-        streams[streamID]->OnDataReceived(handler);
-    } else {
-        std::cerr << "Error: Stream " << streamID << " does not exist!\n";
-    }
 }
 
 std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16_t port)
@@ -118,7 +125,7 @@ std::unique_ptr<Falcon> Falcon::Listen(const std::string &endpoint, const uint16
 
                 if (delta_time > std::chrono::seconds(1) && !c.pinged) {
                     c.pinged = true;
-                    int sent = falcon->SendTo(c.IP, c.Port, falcon->serializeMessage(Ping{PING}));
+                    int sent = falcon->SendTo(c.IP, c.Port, Falcon::SerializeMessage(Ping{PING}));
                     if (sent < 0) {
                         std::cerr << "Failed to ping client " << c.ID << "\n";
                     }
@@ -159,22 +166,25 @@ void Falcon::OnDisconnect(const std::function<void()>& handler) {
     onDisconnectHandlers.push_back(handler);
 }
 
+void Falcon::OnStreamCreated(const std::function<void(uint32_t)> &handler) {
+    onStreamCreatedHandlers.push_back(handler);
+}
 
 
 void Falcon::handleMessage(const Msg &msg) {
-    if (MsgConn msg_conn; deserializeMessage(msg, MSG_CONN, msg_conn)) {
+    if (MsgConn msg_conn; DeserializeMessage(msg, MSG_CONN, msg_conn)) {
         handleConnectionMessage(msg_conn, msg.IP, msg.Port);
     }
-    else if (MsgConnAck msg_conn_ack; deserializeMessage(msg, MSG_CONN_ACK, msg_conn_ack)) {
+    else if (MsgConnAck msg_conn_ack; DeserializeMessage(msg, MSG_CONN_ACK, msg_conn_ack)) {
         handleConnectionAckMessage(msg_conn_ack);
     }
-    else if (MsgStandard msg_standard; deserializeMessage(msg, MSG_STANDARD, msg_standard)) {
+    else if (MsgStandard msg_standard; DeserializeMessage(msg, MSG_STANDARD, msg_standard)) {
         handleStandardMessage(msg_standard);
     }
-    else if (MsgAck msg_ack; deserializeMessage(msg, MSG_ACK, msg_ack)) {
+    else if (MsgAck msg_ack; DeserializeMessage(msg, MSG_ACK, msg_ack)) {
         handleAckMessage(msg_ack);
     }
-    else if (Ping ping; deserializeMessage(msg, PING, ping)) {
+    else if (Ping ping; DeserializeMessage(msg, PING, ping)) {
         handlePingMessage(ping);
     }
     else {
@@ -193,14 +203,14 @@ void Falcon::handleConnectionMessage(const MsgConn &msg_conn, const std::string&
     }
 
     // add client to list
-    uint64_t clientID = nextClientID;
-    nextClientID++;
+    uint64_t clientID = nextClientID++;
+
     clients[clientID] = {clientID, msgIp, msgPort,false, std::chrono::steady_clock::now()};
 
     // send clientID to client
     const MsgConnAck msgConnAck = {MSG_CONN_ACK, clientID};
 
-    int sent = SendTo(msgIp, msgPort, serializeMessage(msgConnAck));
+    int sent = SendTo(msgIp, msgPort, SerializeMessage(msgConnAck));
 
     if (sent < 0) {
         std::cerr << "Failed to send connection ack to " << msgIp << ":" << msgPort << "\n";
@@ -213,29 +223,89 @@ void Falcon::handleConnectionMessage(const MsgConn &msg_conn, const std::string&
 }
 
 void Falcon::handleConnectionAckMessage(const MsgConnAck &msg_conn_ack) {
-    m_client.ID = msg_conn_ack.clientID;
+    clientInfoFromServer.ID = msg_conn_ack.clientID;
     for (const auto& handler: onConnectionEventHandlers) {
         handler(true, msg_conn_ack.clientID);
     }
 }
 
 void Falcon::handleStandardMessage(const MsgStandard &msg_standard) {
-    std::cout << "From " << msg_standard.clientID << " On Stream " << msg_standard.streamID << " Packet " << msg_standard.packetID << "\n";
-    // TODO: add content to message
+    std::cout << "From " << msg_standard.clientID << " On Stream " << msg_standard.streamID << "\n";
+    // get the stream
+    auto stream = std::find_if(streams.begin(), streams.end(), [&](const auto& id) {
+        return id == msg_standard.streamID;
+    });
+
+    if (stream == streams.end()) {
+        std::cout << "Warning: Stream " << msg_standard.streamID << " does not exist, creating it on local!\n";
+        std::string ip = clients[msg_standard.clientID].IP;
+        int port = clients[msg_standard.clientID].Port;
+        auto newStream = std::make_unique<Stream>(msg_standard.streamID, ip, port, *this);
+        streams.push_back(newStream->streamID);
+
+        for (const auto& handler: onStreamCreatedHandlers) {
+            handler(newStream->streamID);
+        }
+    }
+    Stream::OnDataReceived(msg_standard.data);
+
+    if (Stream::IsReliable(msg_standard.streamID)) {
+        reliableMessagesReceived[msg_standard.streamID].insert(reliableMessagesReceived[msg_standard.streamID].begin(), msg_standard);
+        if (reliableMessagesReceived[msg_standard.streamID].size() > 64) {
+            reliableMessagesReceived[msg_standard.streamID].pop_back();
+        }
+
+        uint64_t trace = GetTrace(msg_standard.streamID, msg_standard.messageID);
+
+        // send ack
+        const MsgAck msgAck = {MSG_ACK, msg_standard.clientID, msg_standard.streamID, msg_standard.messageID, trace};
+        int sent = SendTo(clients[msg_standard.clientID].IP, clients[msg_standard.clientID].Port, SerializeMessage(msgAck));
+        if (sent < 0) {
+            std::cerr << "Failed to send ack\n";
+        }
+    }
+
 }
 
 void Falcon::handleAckMessage(const MsgAck &msg_ack) {
-    // TODO: handle ack
+    std::cout << "Ack received from " << msg_ack.clientID << " on stream " << msg_ack.streamID << "\n";
+    for (auto& m : reliableMessagesSent[msg_ack.streamID]) {
+        int delta = msg_ack.messageID - m.messageID;
+
+        if (msg_ack.trace & (RELIABLE_ACK_MASK >> delta)) {
+            reliableMessagesSent[msg_ack.streamID].erase(std::remove_if(reliableMessagesSent[msg_ack.streamID].begin(), reliableMessagesSent[msg_ack.streamID].end(), [&](const auto& msg) {
+                return msg.messageID == m.messageID;
+            }), reliableMessagesSent[msg_ack.streamID].end());
+        }
+    }
+
+    // resend lost packets
+    for (const auto& m : reliableMessagesSent[msg_ack.streamID]) {
+        int sent = SendTo(clients[msg_ack.clientID].IP, clients[msg_ack.clientID].Port, SerializeMessage(m));
+        if (sent < 0) {
+            std::cerr << "Failed to resend lost packet\n";
+        }
+    }
 }
 
 void Falcon::handlePingMessage(const Ping &ping) {
     std::cout << "Ping " << ping.pingID << "received\n";
-    if (m_client.ID != 0) { // check if we are client
+    if (clientInfoFromServer.ID != 0) { // check if we are client
         std::cout << "Ponging\n";
-        int sent = SendTo(m_client.IP, m_client.Port, serializeMessage(Ping{PING, m_client.ID, ping.pingID, ping.time}));
+        int sent = SendTo(clientInfoFromServer.IP, clientInfoFromServer.Port, SerializeMessage(Ping{PING, clientInfoFromServer.ID, ping.pingID, ping.time}));
         if (sent < 0) {
             std::cerr << "Failed to send pong\n";
         }
     }
 }
 
+uint64_t Falcon::GetTrace(uint32_t streamID, uint8_t messageID) {
+    uint64_t trace = 0;
+    for (const MsgStandard& m : reliableMessagesReceived[streamID]) {
+        int delta = messageID - m.messageID;
+        if (delta >= 0 && delta < 64) {
+            trace |= RELIABLE_ACK_MASK >> delta;
+        }
+    }
+    return trace;
+}

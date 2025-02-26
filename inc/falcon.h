@@ -5,18 +5,24 @@
 #include <string>
 #include <span>
 #include <unordered_map>
-#include "stream.h"
 #include <chrono>
 #include <vector>
 #include <cstring>
 #include <atomic>
 #include <thread>
+#include <cstdint>
 
 #ifdef WIN32
     using SocketType = unsigned int;
 #else
     using SocketType = int;
 #endif
+
+static constexpr uint32_t RELIABLESTREAMMASK = 1<<30;
+static constexpr uint32_t SERVERSTREAMMASK = 1<<31;
+static constexpr uint64_t RELIABLE_ACK_MASK = uint64_t(1)<<63;
+
+#include "stream.h"
 
 enum MsgType: uint8_t {
     MSG_CONN,
@@ -45,14 +51,16 @@ struct MsgStandard {
     uint8_t messageType;
     uint64_t clientID;
     uint32_t streamID;
-    uint32_t packetID;
+    uint8_t messageID;
+    char data[1024];
 };
 
 struct MsgAck {
     uint8_t messageType;
     uint64_t clientID;
     uint32_t streamID;
-    uint32_t packetID;
+    uint8_t messageID;
+    uint64_t trace;
 };
 
 struct Ping {
@@ -60,6 +68,14 @@ struct Ping {
     uint64_t clientID;
     uint8_t pingID;
     std::chrono::steady_clock::time_point time;
+};
+
+struct Client {
+    uint64_t ID;
+    std::string IP;
+    int Port;
+    bool pinged;
+    std::chrono::time_point<std::chrono::steady_clock> lastPing;
 };
 
 class Stream;
@@ -74,7 +90,6 @@ public:
     Falcon& operator=(Falcon&&) = default;
 
     [[nodiscard]] static std::unique_ptr<Falcon> Listen(const std::string& endpoint, uint16_t port);
-    [[nodiscard]] static std::unique_ptr<Falcon> Listen(uint16_t port);
     void ConnectTo(const std::string& serverIp, uint16_t port);
 
     int SendTo(const std::string& to, uint16_t port, std::span<const char> message);
@@ -84,52 +99,24 @@ public:
     void OnConnectionEvent(const std::function<void(bool, uint64_t)> &handler);
     void OnClientDisconnected(const std::function<void(uint64_t)>& handler);
     void OnDisconnect(const std::function<void()>& handler);
+    void OnStreamCreated(const std::function<void(uint32_t)> &handler);
 
     // Gestion des Streams
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable);
-    [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable);
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(uint64_t client, bool reliable); // Server API
+    [[nodiscard]] std::unique_ptr<Stream> CreateStream(bool reliable); // Client API
     void CloseStream(const Stream& stream);
-    void SendData(uint32_t streamID, std::span<const char> data);
-    void OnDataReceived(uint32_t streamID, std::function<void(std::span<const char>)> handler);
 
 
-private:
+    Client GetClient(const uint64_t id) {
+        return clients[id];
+    }
 
-    uint64_t nextClientID = 1; // ID unique attribué aux clients
-    uint32_t nextStreamID = 1; // ID unique des Streams
-    std::unordered_map<uint32_t, std::unique_ptr<Stream>> streams; // Liste des Stream
-
-    SocketType m_socket;
-
-    std::thread m_thread;
-    std::atomic<bool> m_running = true;
-
-    std::pmr::vector<std::function<void(uint64_t)>> onClientConnectedHandlers;
-    std::pmr::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
-    std::pmr::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
-    std::pmr::vector<std::function<void()>> onDisconnectHandlers;
-
-    struct Client {
-        uint64_t ID;
-        std::string IP;
-        int Port;
-        bool pinged;
-        std::chrono::time_point<std::chrono::steady_clock> lastPing;
-    };
-
-    std::unordered_map<uint64_t,Client> clients; // server reference to clients
-    Client m_client; // store client info from server
-
-
-
-    int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
-    int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
-    [[nodiscard]] static std::unique_ptr<Falcon> ListenInternal(const std::string& endpoint, uint16_t port);
-
-    std::pair<std::string, int> portFromIp(const std::string &ip);
+    Client GetClientInfoFromServer() {
+        return clientInfoFromServer;
+    }
 
     template<typename T>
-    bool deserializeMessage(const Msg &msg, uint8_t expectedType, T& out) {
+    static bool DeserializeMessage(const Msg &msg, uint8_t expectedType, T& out) {
         if (msg.data.size() >= sizeof(T)) {
             T message;
             std::memcpy(&message, msg.data.data(), sizeof(T));
@@ -142,11 +129,43 @@ private:
     }
 
     template<typename T>
-    std::vector<char> serializeMessage(const T &message) {
+    [[nodiscard]] static std::vector<char> SerializeMessage(const T &message) {
         std::vector<char> buffer(sizeof(T));
         std::memcpy(buffer.data(), &message, sizeof(T));
         return buffer;
     }
+
+
+private:
+
+    uint64_t nextClientID = 1; // ID unique attribué aux clients
+    uint32_t nextStreamID = 1; // ID unique attribué aux Stream
+    std::vector<uint32_t> streams; // Liste des Stream
+    std::unordered_map<uint32_t, std::vector<MsgStandard>> reliableMessagesReceived;
+    std::unordered_map<uint32_t, std::vector<MsgStandard>> reliableMessagesSent;
+
+    SocketType m_socket;
+
+    std::thread m_thread;
+    std::atomic<bool> m_running = true;
+
+    std::vector<std::function<void(uint64_t)>> onClientConnectedHandlers;
+    std::vector<std::function<void(bool, uint64_t)>> onConnectionEventHandlers;
+    std::vector<std::function<void(uint64_t)>> onClientDisconnectedHandlers;
+    std::vector<std::function<void()>> onDisconnectHandlers;
+    std::vector<std::function<void(uint32_t)>> onStreamCreatedHandlers;
+
+    std::unordered_map<uint64_t,Client> clients; // server reference to clients
+    Client clientInfoFromServer; // store client info from server
+
+
+
+    int SendToInternal(const std::string& to, uint16_t port, std::span<const char> message);
+    int ReceiveFromInternal(std::string& from, std::span<char, 65535> message);
+    [[nodiscard]] static std::unique_ptr<Falcon> ListenInternal(const std::string& endpoint, uint16_t port);
+
+    std::pair<std::string, int> portFromIp(const std::string &ip);
+
 
     void handleConnectionMessage(const MsgConn &msg_conn, const std::string& msgIp, int msgPort);
 
@@ -159,5 +178,7 @@ private:
     void handlePingMessage(const Ping & ping);
 
     void handleMessage(const Msg& msg);
+
+    uint64_t GetTrace(uint32_t streamID, uint8_t messageID);
 
 };
